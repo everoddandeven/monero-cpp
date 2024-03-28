@@ -66,7 +66,6 @@
 #include "wallet/wallet_rpc_server_commands_defs.h"
 #include "serialization/binary_utils.h"
 #include "serialization/string.h"
-#include "common/threadpool.h"
 
 using namespace tools;
 
