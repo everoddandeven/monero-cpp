@@ -626,7 +626,7 @@ bool monero_utils::fill_response(tools::wallet2* m_w2, std::vector<tools::wallet
       key_image_list.key_images.push_back(epee::string_tools::pod_to_hex(in.k_image));
       return true;
     });
-    THROW_WALLET_EXCEPTION_IF(!all_are_txin_to_key, error::unexpected_txin_type, ptx.tx);
+    THROW_WALLET_EXCEPTION_IF(!all_are_txin_to_key, tools::error::unexpected_txin_type, ptx.tx);
     fill(spent_key_images, key_image_list);
   }
 
