@@ -57,6 +57,7 @@
 
 #include "wallet/monero_wallet_model.h"
 #include "wallet/wallet_rpc_server_commands_defs.h"
+#include "wallet/wallet_errors.h"
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "serialization/keyvalue_serialization.h" // TODO: consolidate with other binary deps?
 #include "storages/portable_storage.h"
