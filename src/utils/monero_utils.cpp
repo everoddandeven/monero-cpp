@@ -52,7 +52,6 @@
 
 #include "monero_utils.h"
 #include "rpc/core_rpc_server_commands_defs.h"
-#include "wallet/wallet_rpc_server_commands_defs.h"
 #include "storages/portable_storage_template_helper.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "mnemonics/electrum-words.h"
