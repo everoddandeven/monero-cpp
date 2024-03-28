@@ -52,7 +52,7 @@
 
 #pragma once
 
-#include "monero_wallet.h"
+#include "monero_wallet_full.h"
 
 #include "wallet/wallet2.h"
 #include "cryptonote_basic/account.h"
@@ -63,12 +63,6 @@ using namespace monero;
  * Public library interface.
  */
 namespace monero {
-
-  struct monero_wallet_light_utils {
-    static bool is_uint64_t(const std::string& str);
-    static uint64_t uint64_t_cast(const std::string& str);
-    static std::string tx_hex_to_hash(std::string hex);
-  };
 
   /**
    * Models a connection to a light wallet server.
@@ -412,14 +406,10 @@ namespace monero {
   /**
    * Implements a Monero wallet to provide basic lws management.
    */
-  class monero_wallet_light : public monero_wallet {
+  class monero_wallet_light : public monero_wallet_full {
 
   public:
 
-    // --------------------------- STATIC WALLET UTILS --------------------------
-    
-    static std::vector<std::string> get_seed_languages();
-    
     /**
      * Create a new wallet with the given configuration.
      *
@@ -446,7 +436,6 @@ namespace monero {
     /**
      * Supported wallet methods.
      */
-    bool is_view_only() const override { return m_view_only; }
     void set_daemon_connection(const boost::optional<monero_rpc_connection>& connection) override;
     void set_daemon_connection(std::string host, std::string port = "", std::string admin_uri = "", std::string admin_port = "", std::string token = "");
     void set_daemon_proxy(const std::string& uri = "") override;
@@ -456,21 +445,6 @@ namespace monero {
     bool is_daemon_synced() const override;
     bool is_daemon_trusted() const override { return false; };
     bool is_synced() const override;
-
-    monero_version get_version() const override;
-    std::string get_path() const override;
-    std::string get_seed() const override;
-    std::string get_seed_language() const override;
-    monero_network_type get_network_type() const override { return m_network_type; };
-    std::string get_public_view_key() const override;
-    std::string get_private_view_key() const override { return m_prv_view_key; };
-    std::string get_public_spend_key() const override;
-    std::string get_private_spend_key() const override;
-    std::string get_primary_address() const override { return m_primary_address; };
-    std::string get_address(const uint32_t account_idx, const uint32_t subaddress_idx) const override;
-    monero_subaddress get_address_index(const std::string& address) const override;
-    monero_integrated_address get_integrated_address(const std::string& standard_address = "", const std::string& payment_id = "") const override;
-    monero_integrated_address decode_integrated_address(const std::string& integrated_address) const override;
 
     uint64_t get_height() const override { return m_scanned_block_height; };
     uint64_t get_restore_height() const override { return m_start_height; };
@@ -493,42 +467,23 @@ namespace monero {
     uint64_t get_unlocked_balance(uint32_t account_idx) const override { return account_idx == 0 ? get_balance() : 0; };
     uint64_t get_unlocked_balance(uint32_t account_idx, uint32_t subaddress_idx) const override { return account_idx == 0 && subaddress_idx == 0 ? get_balance() : 0; };
     
-    std::vector<monero_account> get_accounts(bool include_subaddresses, const std::string& tag = "") const override;
-    monero_account get_account(const uint32_t account_idx = 0, bool include_subaddresses = false) const override;
-    
     std::vector<std::shared_ptr<monero_tx_wallet>> get_txs() const override;
     std::vector<std::shared_ptr<monero_tx_wallet>> get_txs(const monero_tx_query& query) const override;
-    std::string dump_tx_to_str(const std::vector<tools::wallet2::pending_tx> &ptx_vector) const;
     
     std::vector<std::shared_ptr<monero_transfer>> get_transfers(const monero_transfer_query& query) const override;
     
     std::vector<std::shared_ptr<monero_output_wallet>> get_outputs() const;
     std::vector<std::shared_ptr<monero_output_wallet>> get_outputs(const monero_output_query& query) const override;
-    std::string export_outputs(bool all = false) const override;
 
     std::vector<std::shared_ptr<monero_key_image>> export_key_images(bool all = false) const override;
     std::shared_ptr<monero_key_image_import_result> import_key_images(const std::vector<std::shared_ptr<monero_key_image>>& key_images) override;
 
     std::vector<std::shared_ptr<monero_tx_wallet>> create_txs(const monero_tx_config& config) override;    
-    std::vector<std::string> submit_txs(const std::string& signed_tx_hex) override;
-    monero_tx_set sign_txs(const std::string& unsigned_tx_hex) override;
-    std::vector<std::string> relay_txs(const std::vector<std::string>& tx_metadatas) override;
-    
-    std::string sign_message(const std::string& msg, monero_message_signature_type signature_type, uint32_t account_idx = 0, uint32_t subaddress_idx = 0) const override;
-    monero_message_signature_result verify_message(const std::string& msg, const std::string& address, const std::string& signature) const override;
-    
-    std::string get_payment_uri(const monero_tx_config& config) const override;
-    std::shared_ptr<monero_tx_config> parse_payment_uri(const std::string& uri) const override;
-    bool get_attribute(const std::string& key, std::string& value) const override;
-    void set_attribute(const std::string& key, const std::string& val) override;
 
     uint64_t wait_for_next_block() override;
     bool is_multisig_import_needed() const override { return false; }
     bool is_multisig() const override { return false; }
 
-    void change_password(const std::string& old_password, const std::string& new_password);
-    void move_to(const std::string& path, const std::string& password);
-    void save() override;
     void close(bool save = false) override;
 
     // --------------------------------- PROTECTED ------------------------------------------
@@ -594,11 +549,8 @@ namespace monero {
     serializable_unordered_map<crypto::public_key, serializable_map<uint64_t, crypto::key_image> > m_key_image_cache;
 
     void init_common();
-    std::vector<tools::wallet2::pending_tx> create_transactions(std::vector<cryptonote::tx_destination_entry> dsts, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, const tools::wallet2::unique_index_container& subtract_fee_from_outputs = {});
     void calculate_balances();
-    uint64_t get_base_fee();
-    uint64_t get_base_fee(uint32_t priority);
-    uint64_t get_fee_multiplier(uint32_t priority, int fee_algorithm);
+
     bool has_imported_key_images() const {
       return !m_imported_key_images.empty();
     };
@@ -616,7 +568,6 @@ namespace monero {
     bool is_output_spent(monero_light_output output) const;
     bool is_mined_output(monero_light_output output) const;
     void set_unspent(size_t idx);
-    std::string export_outputs_to_str(bool all = false, uint32_t start = 0, uint32_t count = 0xffffffff) const;
     std::tuple<uint64_t, uint64_t, std::vector<tools::wallet2::exported_transfer_details>> export_outputs(bool all, uint32_t start, uint32_t count = 0xffffffff) const;
     bool parse_rct_str(const std::string& rct_string, const crypto::public_key& tx_pub_key, uint64_t internal_output_index, rct::key& decrypted_mask, rct::key& rct_commit, bool decrypt) const;
     

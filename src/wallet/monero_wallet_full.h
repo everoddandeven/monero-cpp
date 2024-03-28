@@ -67,7 +67,11 @@ namespace monero {
   // -------------------------------- LISTENERS -------------------------------
 
   // forward declaration of internal wallet2 listener
-  struct wallet2_listener;
+  struct wallet2_listener : public tools::i_wallet2_callback {
+
+    public:
+      wallet2_listener(monero_wallet_full& wallet, tools::wallet2& wallet2);
+  };
 
   // --------------------------- STATIC WALLET UTILS --------------------------
 
