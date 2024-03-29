@@ -106,7 +106,7 @@ namespace monero_utils
   std::string ptx_to_string(const tools::wallet2::pending_tx &ptx);
   //------------------------------------------------------------------------------------------------------------------------------
   template<typename T> bool is_error_value(const T &val) { return false; }
-  bool s_error_value(const std::string &s) { return s.empty(); }
+  bool is_error_value(const std::string &s) { return s.empty(); }
   //------------------------------------------------------------------------------------------------------------------------------
   template<typename T, typename V>
   bool fill(T &where, V s)
@@ -142,7 +142,7 @@ namespace monero_utils
   }
 
   static uint64_t uint64_t_cast(const std::string& str) {
-    if (!is_uint64_t(str)) {
+    if (!monero_utils::is_uint64_t(str)) {
       throw std::out_of_range("String provided is not a valid uint64_t");
     }
 
