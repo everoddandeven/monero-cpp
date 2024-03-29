@@ -608,6 +608,8 @@ std::string monero_utils::tx_hex_to_hash(std::string hex) {
   return epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx));
 }
 
+bool monero_utils::is_error_value(const std::string &s) { return s.empty(); }
+
 // --------------------------- LOG UTILS -------------------------------
 
 void monero_utils::set_log_level(int level) {
