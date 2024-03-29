@@ -410,22 +410,6 @@ namespace monero {
 
   public:
 
-    /**
-     * Create a new wallet with the given configuration.
-     *
-     * @param config is the wallet configuration
-     * @param http_client_factory allows use of custom http clients
-     * @return a pointer to the wallet instance
-     */
-    static monero_wallet_light* create_wallet(const monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory = nullptr);
-
-    /**
-     * Create a wallet from an address, view key, and private view key.
-     * 
-     * @param config is the wallet configuration (network type, address, view key, private view key)
-     */
-    static monero_wallet_light* create_wallet_from_keys(const monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory = nullptr);
-
     // ----------------------------- WALLET METHODS -----------------------------
 
     /**
