@@ -2087,9 +2087,10 @@ void monero_wallet_light::calculate_balances() {
       MINFO("calculate_balances(): after uint64, total_received " << total_received);
 
       MINFO("BEFORE view_only");
+      if (m_w2 == nullptr) throw std::runtime_error("calculate_balances(): wallet2 is null");
       is_view_only();
       MINFO("AFTER view_only");
-      
+
       if (!is_view_only()) total_sent += monero_utils::uint64_t_cast(transaction.m_total_sent.get());
       MINFO("calculate_balances: end for block");
     }
