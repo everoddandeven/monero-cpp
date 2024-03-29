@@ -103,14 +103,14 @@ namespace monero_utils
   std::string get_default_ringdb_path(cryptonote::network_type nettype);
 
   bool validate_transfer(tools::wallet2* m_w2, const std::list<tools::wallet_rpc::transfer_destination>& destinations, const std::string& payment_id, std::vector<cryptonote::tx_destination_entry>& dsts, std::vector<uint8_t>& extra, bool at_least_one_destination, epee::json_rpc::error& er);
-  static std::string ptx_to_string(const tools::wallet2::pending_tx &ptx);
+  std::string ptx_to_string(const tools::wallet2::pending_tx &ptx);
   template<typename T> static bool is_error_value(const T &val);
-  static bool is_error_value(const std::string &s);
+  bool is_error_value(const std::string &s);
   template<typename T, typename V>
-  static bool fill(T &where, V s);
+  bool fill(T &where, V s);
   template<typename T, typename V>
-  static bool fill(std::list<T> &where, V s);
-  static uint64_t total_amount(const tools::wallet2::pending_tx &ptx);
+  bool fill(std::list<T> &where, V s);
+  uint64_t total_amount(const tools::wallet2::pending_tx &ptx);
 
   static bool is_uint64_t(const std::string& str) {
     try {
