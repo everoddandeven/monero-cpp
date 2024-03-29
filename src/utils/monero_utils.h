@@ -112,7 +112,7 @@ namespace monero_utils
   bool fill(std::list<T> &where, V s);
   uint64_t total_amount(const tools::wallet2::pending_tx &ptx);
 
-  bool is_uint64_t(const std::string& str) {
+  static bool is_uint64_t(const std::string& str) {
     try {
       uint64_t sz;
       std::stol(str, &sz);
@@ -128,7 +128,7 @@ namespace monero_utils
     }
   }
 
-  uint64_t uint64_t_cast(const std::string& str) {
+  static uint64_t uint64_t_cast(const std::string& str) {
     if (!is_uint64_t(str)) {
       throw std::out_of_range("String provided is not a valid uint64_t");
     }
