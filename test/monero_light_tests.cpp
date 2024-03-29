@@ -120,7 +120,7 @@ int main(int argc, const char* argv[]) {
 
   MINFO("Importing signed key images in view only");
   std::vector<std::shared_ptr<monero_key_image>> signed_key_images = offline_wallet->export_key_images();
-  
+  /*
   //if (signed_key_images.empty()) throw std::runtime_error("Offline wallet should have signed key images at this point.");
   wallet_restored->import_key_images(signed_key_images);
   MINFO("Imported key images");
@@ -153,6 +153,8 @@ int main(int argc, const char* argv[]) {
 
   MINFO("Relaying tx...");
   wallet_restored->relay_tx(*unsigned_tx);
+  */
+  
   /*std::string unsigned_tx_hex = unsigned_tx->m_tx_set.get()->m_unsigned_tx_hex.get();
   MINFO("Created unsigned tx hash: " << unsigned_tx_hex);
   monero_tx_set signed_tx_set = offline_wallet->sign_txs(unsigned_tx_hex);  
