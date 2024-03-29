@@ -2088,6 +2088,7 @@ void monero_wallet_light::calculate_balances() {
 
       MINFO("BEFORE view_only");
       if (m_w2 == nullptr) throw std::runtime_error("calculate_balances(): wallet2 is null");
+      MINFO("wallet 2 is not null");
       is_view_only();
       MINFO("AFTER view_only");
 
