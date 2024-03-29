@@ -64,7 +64,6 @@
  * Implements a monero_wallet.h by wrapping monero-project's wallet2.
  */
 namespace monero {
-  // --------------------------- STATIC WALLET UTILS --------------------------
 
   /**
    * Monero wallet implementation which uses monero-project's wallet2.
@@ -72,7 +71,8 @@ namespace monero {
   class monero_wallet_full : public monero_wallet {
 
   public:
-
+    // --------------------------- STATIC WALLET UTILS --------------------------
+    
     /**
      * Indicates if a wallet exists at the given path.
      *

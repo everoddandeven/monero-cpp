@@ -410,6 +410,48 @@ namespace monero {
 
   public:
 
+    // --------------------------- STATIC WALLET UTILS --------------------------
+    
+    /**
+     * Indicates if a wallet exists at the given path.
+     *
+     * @param path is the path to check for a wallet
+     * @return true if a wallet exists at the given path, false otherwise
+     */
+    static bool wallet_exists(const std::string& path);
+
+    /**
+     * Open an existing wallet from disk.
+     *
+     * @param path is the path to the wallet file to open
+     * @param password is the password of the wallet file to open
+     * @param network_type is the wallet's network type
+     * @return a pointer to the wallet instance
+     */
+    static monero_wallet_light* open_wallet(const std::string& path, const std::string& password, const monero_network_type network_type);
+
+    /**
+     * Open an in-memory wallet from existing data buffers.
+     *
+     * @param password is the password of the wallet file to open
+     * @param network_type is the wallet's network type
+     * @param keys_data contains the contents of the ".keys" file
+     * @param cache_data contains the contents of the wallet cache file (no extension)
+     * @param daemon_connection is connection information to a daemon (default = an unconnected wallet)
+     * @param http_client_factory allows use of custom http clients
+     * @return a pointer to the wallet instance
+     */
+    static monero_wallet_light* open_wallet_data(const std::string& password, const monero_network_type, const std::string& keys_data, const std::string& cache_data, const monero_rpc_connection& daemon_connection = monero_rpc_connection(), std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory = nullptr);
+
+    /**
+     * Create a new wallet with the given configuration.
+     *
+     * @param config is the wallet configuration
+     * @param http_client_factory allows use of custom http clients
+     * @return a pointer to the wallet instance
+     */
+    static monero_wallet_light* create_wallet(const monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory = nullptr);
+
     // ----------------------------- WALLET METHODS -----------------------------
 
     /**
@@ -759,5 +801,10 @@ namespace monero {
     void rescan(monero_light_rescan_request request) const;
 
     const epee::net_utils::http::http_response_info* post(std::string method, std::string &body, bool admin = false) const;
+
+    static monero_wallet_light* create_wallet_from_seed(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
+    static monero_wallet_light* create_wallet_from_keys(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
+    static monero_wallet_light* create_wallet_random(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
+
   };
 }
