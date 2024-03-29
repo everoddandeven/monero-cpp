@@ -2085,6 +2085,11 @@ void monero_wallet_light::calculate_balances() {
       total_received += monero_utils::uint64_t_cast(transaction.m_total_received.get());
 
       MINFO("calculate_balances(): after uint64, total_received " << total_received);
+
+      MINFO("BEFORE view_only");
+      is_view_only();
+      MINFO("AFTER view_only");
+      
       if (!is_view_only()) total_sent += monero_utils::uint64_t_cast(transaction.m_total_sent.get());
       MINFO("calculate_balances: end for block");
     }
