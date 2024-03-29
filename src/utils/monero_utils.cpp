@@ -552,7 +552,7 @@ bool monero_utils::validate_transfer(tools::wallet2* m_w2, const std::list<tools
   return true;
 }
 //------------------------------------------------------------------------------------------------------------------------------
-static std::string monero_utils::ptx_to_string(const tools::wallet2::pending_tx &ptx)
+std::string monero_utils::ptx_to_string(const tools::wallet2::pending_tx &ptx)
 {
   std::ostringstream oss;
   boost::archive::portable_binary_oarchive ar(oss);
@@ -571,7 +571,7 @@ template<typename T> bool monero_utils::is_error_value(const T &val) { return fa
 bool monero_utils::is_error_value(const std::string &s) { return s.empty(); }
 //------------------------------------------------------------------------------------------------------------------------------
 template<typename T, typename V>
-static bool monero_utils::fill(T &where, V s)
+bool monero_utils::fill(T &where, V s)
 {
   if (is_error_value(s)) return false;
   where = std::move(s);
@@ -579,21 +579,21 @@ static bool monero_utils::fill(T &where, V s)
 }
 //------------------------------------------------------------------------------------------------------------------------------
 template<typename T, typename V>
-static bool monero_utils::fill(std::list<T> &where, V s)
+bool monero_utils::fill(std::list<T> &where, V s)
 {
   if (is_error_value(s)) return false;
   where.emplace_back(std::move(s));
   return true;
 }
 //------------------------------------------------------------------------------------------------------------------------------
-static uint64_t monero_utils::total_amount(const tools::wallet2::pending_tx &ptx)
+uint64_t monero_utils::total_amount(const tools::wallet2::pending_tx &ptx)
 {
   uint64_t amount = 0;
   for (const auto &dest: ptx.dests) amount += dest.amount;
   return amount;
 }
 
-static std::string monero_utils::tx_hex_to_hash(std::string hex) {
+std::string monero_utils::tx_hex_to_hash(std::string hex) {
   cryptonote::blobdata blob;
   if (!epee::string_tools::parse_hexstr_to_binbuff(hex, blob))
   {
