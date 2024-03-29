@@ -105,7 +105,7 @@ namespace monero_utils
   bool validate_transfer(tools::wallet2* m_w2, const std::list<tools::wallet_rpc::transfer_destination>& destinations, const std::string& payment_id, std::vector<cryptonote::tx_destination_entry>& dsts, std::vector<uint8_t>& extra, bool at_least_one_destination, epee::json_rpc::error& er);
   std::string ptx_to_string(const tools::wallet2::pending_tx &ptx);
   //------------------------------------------------------------------------------------------------------------------------------
-  template<typename T> bool monero_utils::is_error_value(const T &val) { return false; }
+  template<typename T> bool is_error_value(const T &val) { return false; }
   bool s_error_value(const std::string &s) { return s.empty(); }
   //------------------------------------------------------------------------------------------------------------------------------
   template<typename T, typename V>
@@ -117,7 +117,7 @@ namespace monero_utils
   }
   //------------------------------------------------------------------------------------------------------------------------------
   template<typename T, typename V>
-  bool monero_utils::fill(std::list<T> &where, V s)
+  bool fill(std::list<T> &where, V s)
   {
     if (is_error_value(s)) return false;
     where.emplace_back(std::move(s));
