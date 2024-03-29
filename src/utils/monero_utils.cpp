@@ -579,14 +579,14 @@ static bool monero_utils::fill(T &where, V s)
 }
 //------------------------------------------------------------------------------------------------------------------------------
 template<typename T, typename V>
-bool monero_utils::fill(std::list<T> &where, V s)
+static bool monero_utils::fill(std::list<T> &where, V s)
 {
   if (is_error_value(s)) return false;
   where.emplace_back(std::move(s));
   return true;
 }
 //------------------------------------------------------------------------------------------------------------------------------
-uint64_t monero_utils::total_amount(const tools::wallet2::pending_tx &ptx)
+static uint64_t monero_utils::total_amount(const tools::wallet2::pending_tx &ptx)
 {
   uint64_t amount = 0;
   for (const auto &dest: ptx.dests) amount += dest.amount;
@@ -594,7 +594,7 @@ uint64_t monero_utils::total_amount(const tools::wallet2::pending_tx &ptx)
 }
 //------------------------------------------------------------------------------------------------------------------------------
 template<typename Ts, typename Tu, typename Tk, typename Ta>
-bool monero_utils::fill_response(tools::wallet2* m_w2, std::vector<tools::wallet2::pending_tx> &ptx_vector,
+static bool monero_utils::fill_response(tools::wallet2* m_w2, std::vector<tools::wallet2::pending_tx> &ptx_vector,
     bool get_tx_key, Ts& tx_key, Tu &amount, Ta &amounts_by_dest, Tu &fee, Tu &weight, std::string &multisig_txset, std::string &unsigned_txset, bool do_not_relay,
     Ts &tx_hash, bool get_tx_hex, Ts &tx_blob, bool get_tx_metadata, Ts &tx_metadata, Tk &spent_key_images, epee::json_rpc::error &er)
 {
