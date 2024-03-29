@@ -1022,111 +1022,6 @@ std::shared_ptr<monero_light_transaction> monero_light_transaction::copy(const s
   return tgt;
 }
 
-// ---------------------------- WALLET MANAGEMENT ---------------------------
-
-monero_wallet_light* monero_wallet_light::create_wallet(const monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory) {
-  MTRACE("create_wallet(config)");
-
-  // validate and normalize config
-  monero_wallet_config config_normalized = config.copy();
-  if (config.m_path == boost::none) config_normalized.m_path = std::string("");
-  if (config.m_password == boost::none) config_normalized.m_password = std::string("");
-  if (config.m_language == boost::none) config_normalized.m_language = std::string("");
-  if (config.m_seed == boost::none) config_normalized.m_seed = std::string("");
-  if (config.m_primary_address == boost::none) config_normalized.m_primary_address = std::string("");
-  if (config.m_private_spend_key == boost::none) config_normalized.m_private_spend_key = std::string("");
-  if (config.m_private_view_key == boost::none) config_normalized.m_private_view_key = std::string("");
-  if (config.m_seed_offset == boost::none) config_normalized.m_seed_offset = std::string("");
-  if (config.m_is_multisig == boost::none) config_normalized.m_is_multisig = false;
-  if (config.m_account_lookahead != boost::none && config.m_subaddress_lookahead == boost::none) throw std::runtime_error("No subaddress lookahead provided with account lookahead");
-  if (config.m_account_lookahead == boost::none && config.m_subaddress_lookahead != boost::none) throw std::runtime_error("No account lookahead provided with subaddress lookahead");
-  if (config_normalized.m_language.get().empty()) config_normalized.m_language = std::string("English");
-  if (!monero_utils::is_valid_language(config_normalized.m_language.get())) throw std::runtime_error("Unknown language: " + config_normalized.m_language.get());
-  if (config.m_network_type == boost::none) throw std::runtime_error("Must provide wallet network type");
-
-  // create wallet
-  if (!config_normalized.m_primary_address.get().empty() && !config_normalized.m_private_view_key.get().empty()) {
-    return create_wallet_from_keys(config_normalized, std::move(http_client_factory));
-  } else {
-    throw std::runtime_error("Configuration must have primary address and private view key.");
-  }
-}
-
-monero_wallet_light* monero_wallet_light::create_wallet_from_keys(const monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory) {
-  // validate and normalize config
-  monero_wallet_config config_normalized = config.copy();
-  if (config.m_network_type == boost::none) throw std::runtime_error("Must provide wallet network type");
-  if (config.m_language == boost::none || config_normalized.m_language.get().empty()) config_normalized.m_language = "English";
-  if (config.m_private_spend_key == boost::none) config_normalized.m_private_spend_key = std::string("");
-  if (config.m_private_view_key == boost::none) config_normalized.m_private_view_key = std::string("");
-  if (!monero_utils::is_valid_language(config_normalized.m_language.get())) throw std::runtime_error("Unknown language: " + config_normalized.m_language.get());
-
-  // parse and validate private spend key
-  crypto::secret_key spend_key_sk;
-  bool has_spend_key = false;
-  if (!config_normalized.m_private_spend_key.get().empty()) {
-    cryptonote::blobdata spend_key_data;
-    if (!epee::string_tools::parse_hexstr_to_binbuff(config.m_private_spend_key.get(), spend_key_data) || spend_key_data.size() != sizeof(crypto::secret_key)) {
-      throw std::runtime_error("failed to parse secret spend key");
-    }
-    has_spend_key = true;
-    spend_key_sk = *reinterpret_cast<const crypto::secret_key*>(spend_key_data.data());
-  }
-
-  // parse and validate private view key
-  crypto::secret_key view_key_sk;
-  if (config_normalized.m_private_view_key.get().empty()) {
-    throw std::runtime_error("Must provide view key");
-  }
-
-  cryptonote::blobdata view_key_data;
-  if (!epee::string_tools::parse_hexstr_to_binbuff(config_normalized.m_private_view_key.get(), view_key_data) || view_key_data.size() != sizeof(crypto::secret_key)) {
-  throw std::runtime_error("failed to parse secret view key");
-  }
-  view_key_sk = *reinterpret_cast<const crypto::secret_key*>(view_key_data.data());
-
-  // parse and validate address
-  cryptonote::address_parse_info address_info;
-  if (config_normalized.m_primary_address.get().empty()) {
-    throw std::runtime_error("must provide primary address");
-  } else {
-    if (!get_account_address_from_str(address_info, static_cast<cryptonote::network_type>(config_normalized.m_network_type.get()), config_normalized.m_primary_address.get())) throw std::runtime_error("failed to parse address");
-
-    // check the spend and view keys match the given address
-    crypto::public_key pkey;
-    if (!crypto::secret_key_to_public_key(view_key_sk, pkey)) throw std::runtime_error("failed to verify secret view key");
-    if (address_info.address.m_view_public_key != pkey) throw std::runtime_error("view key does not match address");
-  }
-
-  // initialize wallet account
-  monero_wallet_light* wallet = new monero_wallet_light();
-  if (has_spend_key) {
-    wallet->m_account.create_from_keys(address_info.address, spend_key_sk, view_key_sk);
-    wallet->m_view_only = false;
-  }
-  else {
-    wallet->m_account.create_from_viewkey(address_info.address, view_key_sk);
-    wallet->m_view_only = true;
-  }
-
-  // initialize remaining wallet
-  wallet->m_network_type = config_normalized.m_network_type.get();
-
-  wallet->m_http_client = http_client_factory != nullptr ? http_client_factory->create() : net::http::client_factory().create();
-  wallet->m_http_admin_client = http_client_factory != nullptr ? http_client_factory->create() : net::http::client_factory().create();
-  if (http_client_factory == nullptr) wallet->m_w2 = std::unique_ptr<tools::wallet2>(new tools::wallet2(static_cast<cryptonote::network_type>(config.m_network_type.get()), 1, true));
-  else wallet->m_w2 = std::unique_ptr<tools::wallet2>(new tools::wallet2(static_cast<cryptonote::network_type>(config.m_network_type.get()), 1, true, std::move(http_client_factory)));
-  if (config.m_account_lookahead != boost::none) wallet->m_w2->set_subaddress_lookahead(config.m_account_lookahead.get(), config.m_subaddress_lookahead.get());
-  if (has_spend_key) wallet->m_w2->generate(config.m_path.get(), config.m_password.get(), address_info.address, spend_key_sk, view_key_sk);
-  else if (has_spend_key) wallet->m_w2->generate(config.m_path.get(), config.m_password.get(), spend_key_sk, true, false);
-  else wallet->m_w2->generate(config.m_path.get(), config.m_password.get(), address_info.address, view_key_sk);
-  if (config_normalized.m_server != boost::none) wallet->set_daemon_connection(config_normalized.m_server.get());
-  
-  wallet->init_common();
-
-  return wallet;
-}
-
 
 // ----------------------------- WALLET METHODS -----------------------------
 
@@ -1336,7 +1231,7 @@ monero_sync_result monero_wallet_light::sync(uint64_t start_height) {
   if (!is_connected_to_daemon()) throw std::runtime_error("sync(uint64_t): Wallet is not connected to daemon");
   if (start_height < m_start_height) {
     if (!is_connected_to_admin_daemon()) throw std::runtime_error("Wallet is not connected to admin daemon");
-    rescan(start_height, m_primary_address);
+    rescan(start_height, get_primary_address());
   }
 
   monero_sync_result last_sync = sync_aux();
@@ -1371,7 +1266,7 @@ bool monero_wallet_light::parse_rct_str(const std::string& rct_string, const cry
   if (decrypt) {
     // Decrypt the mask
     crypto::key_derivation derivation;
-    bool r = generate_key_derivation(tx_pub_key, m_account.get_keys().m_view_secret_key, derivation);
+    bool r = generate_key_derivation(tx_pub_key, m_w2->get_account().get_keys().m_view_secret_key, derivation);
     THROW_WALLET_EXCEPTION_IF(!r, error::wallet_internal_error, "Failed to generate key derivation");
     crypto::secret_key scalar;
     crypto::derivation_to_scalar(derivation, internal_output_index, scalar);
@@ -2004,6 +1899,9 @@ void monero_wallet_light::close(bool save) {
 // ------------------------------- PROTECTED HELPERS ----------------------------
 
 void monero_wallet_light::init_common() {
+  MINFO("Super init common");
+  monero_wallet_full::init_common();
+
   MINFO("monero_wallet_light::init_common()");
   m_w2->set_light_wallet(true);
   MINFO("Creating default listener");
@@ -2011,10 +1909,6 @@ void monero_wallet_light::init_common() {
   MINFO("Default listener created");
   m_w2->callback(default_listener);
   MINFO("Default listener set to w2");
-  m_primary_address = m_account.get_public_address_str(static_cast<cryptonote::network_type>(m_network_type));
-  const cryptonote::account_keys& keys = m_account.get_keys();
-  m_pub_spend_key = epee::string_tools::pod_to_hex(keys.m_account_address.m_spend_public_key);
-  m_prv_view_key = epee::string_tools::pod_to_hex(keys.m_view_secret_key);
 
   m_request_pending = false;
   m_request_accepted = false;

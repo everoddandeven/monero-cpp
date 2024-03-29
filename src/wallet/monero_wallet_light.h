@@ -489,13 +489,7 @@ namespace monero {
     // --------------------------------- PROTECTED ------------------------------------------
 
   protected:
-    bool m_view_only;
-    std::unique_ptr<tools::wallet2> m_w2;
-    cryptonote::account_base m_account;
-    monero_network_type m_network_type;
-    std::string m_prv_view_key;
-    std::string m_pub_spend_key;
-    std::string m_primary_address;
+
     std::unique_ptr<epee::net_utils::http::abstract_http_client> m_http_client;
     std::unique_ptr<epee::net_utils::http::abstract_http_client> m_http_admin_client;
     std::chrono::milliseconds m_timeout = std::chrono::milliseconds(3000);
@@ -506,18 +500,6 @@ namespace monero {
     std::string m_admin_port;
     std::string m_lws_admin_uri;
     std::string m_token;
-
-    // blockchain sync management
-    mutable std::atomic<bool> m_is_synced;       // whether or not wallet is synced
-    mutable std::atomic<bool> m_is_connected;    // cache connection status to avoid unecessary RPC calls
-    boost::condition_variable m_sync_cv;         // to make sync threads woke
-    boost::mutex m_sync_mutex;                   // synchronize sync() and syncAsync() requests
-    std::atomic<bool> m_rescan_on_sync;          // whether or not to rescan on sync
-    std::atomic<bool> m_syncing_enabled;         // whether or not auto sync is enabled
-    std::atomic<bool> m_sync_loop_running;       // whether or not the syncing thread is shut down
-    std::atomic<int> m_syncing_interval;         // auto sync loop interval in milliseconds
-    boost::thread m_syncing_thread;              // thread for auto sync loop
-    boost::mutex m_syncing_mutex;                // synchronize auto sync loop
 
     bool m_request_pending;
     bool m_request_accepted;
@@ -580,23 +562,23 @@ namespace monero {
     // --------------------------------- LIGHT WALLET CLIENT METHODS ------------------------------------------
 
     monero_light_get_address_info_response get_address_info() const {
-      return get_address_info(m_primary_address, m_prv_view_key);
+      return get_address_info(get_primary_address(), get_private_view_key());
     };
 
     monero_light_get_address_txs_response get_address_txs() const {
-      return get_address_txs(m_primary_address, m_prv_view_key);
+      return get_address_txs(get_primary_address(), get_private_view_key());
     }
 
     monero_light_get_unspent_outs_response get_unspent_outs(std::string amount = "0", boost::optional<uint32_t> mixin = boost::none, bool use_dust = false, std::string dust_threshold = "0") const {
-      return get_unspent_outs(m_primary_address, m_prv_view_key, amount, (mixin == boost::none) ? m_mixin : mixin.get(), use_dust, dust_threshold);
+      return get_unspent_outs(get_primary_address(), get_private_view_key(), amount, (mixin == boost::none) ? m_mixin : mixin.get(), use_dust, dust_threshold);
     }
 
     monero_light_import_request_response import_request() const {
-      return import_request(m_primary_address, m_prv_view_key);
+      return import_request(get_primary_address(), get_private_view_key());
     }
 
     monero_light_login_response login(bool create_account = false, bool generated_locally = false) {
-      return login(m_primary_address, m_prv_view_key, create_account, generated_locally);
+      return login(get_primary_address(), get_private_view_key(), create_account, generated_locally);
     }
 
     monero_light_get_address_txs_response get_address_txs(std::string address, std::string view_key) const {
@@ -719,7 +701,7 @@ namespace monero {
     }
 
     void add_account() const {
-      add_account(m_primary_address, m_prv_view_key);
+      add_account(get_primary_address(), get_private_view_key());
     }
 
     void add_account(std::string address, std::string view_key) const {
@@ -743,7 +725,7 @@ namespace monero {
     }
 
     void modify_account_status(std::string type) {
-      modify_account_status(type, m_primary_address);
+      modify_account_status(type, get_primary_address());
     }
 
     void modify_account_status(std::string type, std::string address) {
@@ -760,11 +742,11 @@ namespace monero {
     }
 
     void rescan() const {
-      rescan(m_primary_address);
+      rescan(get_primary_address());
     }
 
     void rescan(uint64_t start_height) {
-      rescan(start_height, m_primary_address);
+      rescan(start_height, get_primary_address());
     }
 
     void rescan(std::string address) const {

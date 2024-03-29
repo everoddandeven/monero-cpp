@@ -256,7 +256,6 @@ namespace monero {
 
   // ---------------------------------- PRIVATE ---------------------------------
 
-  private:
     friend struct wallet2_listener;
     std::unique_ptr<wallet2_listener> m_w2_listener; // internal wallet implementation listener
     std::set<monero_wallet_listener*> m_listeners;   // external wallet listeners
