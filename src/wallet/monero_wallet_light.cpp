@@ -1221,6 +1221,7 @@ monero_sync_result monero_wallet_light::sync_aux() {
 
   m_start_height = response.m_start_height.get();
   m_scanned_block_height = response.m_scanned_block_height.get();
+  MINFO("sync_aux(): scanned block height " << m_scanned_block_height);
   m_blockchain_height = response.m_blockchain_height.get();
 
   m_raw_transactions = response.m_transactions.get();
@@ -2066,15 +2067,22 @@ void monero_wallet_light::calculate_balances() {
     } else {
       MINFO("calculate_balances(): B");
       // transaction has confirmations
+
+      if (transaction.m_height == boost::none) throw std::runtime_error("transaction height is null!");
+
       uint64_t tx_confirmations = m_scanned_block_height - transaction.m_height.get();
 
       if (tx_confirmations < 10) {
+        MINFO("calculate_balances: B Before check");
         if (!is_view_only()) total_locked_sent += monero_utils::uint64_t_cast(transaction.m_total_sent.get());
+        MINFO("calculate_balances: B After check");
         total_locked_received += monero_utils::uint64_t_cast(transaction.m_total_received.get());
+        MINFO("calculate_balances: B total_locked_received " << total_locked_received);
       }
 
       total_received += monero_utils::uint64_t_cast(transaction.m_total_received.get());
       if (!is_view_only()) total_sent += monero_utils::uint64_t_cast(transaction.m_total_sent.get());
+      MINFO("calculate_balances: end for block");
     }
 
     MINFO("calculate_balances(): C");
