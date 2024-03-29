@@ -2123,6 +2123,9 @@ void monero_wallet_light::init_common() {
   m_request_pending = false;
   m_request_accepted = false;
 
+  m_http_client = net::http::client_factory().create();
+  m_http_admin_client = net::http::client_factory().create();
+
   if (m_lws_uri != "") {
     epee::net_utils::ssl_support_t ssl = m_lws_uri.rfind("https", 0) == 0 ? epee::net_utils::ssl_support_t::e_ssl_support_enabled : epee::net_utils::ssl_support_t::e_ssl_support_disabled;
 
