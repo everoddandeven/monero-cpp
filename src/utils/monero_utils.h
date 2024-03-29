@@ -112,7 +112,7 @@ namespace monero_utils
   bool fill(std::list<T> &where, V s);
   uint64_t total_amount(const tools::wallet2::pending_tx &ptx);
 
-  static bool is_uint64_t(const std::string& str) {
+  bool is_uint64_t(const std::string& str) {
     try {
       uint64_t sz;
       std::stol(str, &sz);
@@ -128,7 +128,7 @@ namespace monero_utils
     }
   }
 
-  static uint64_t uint64_t_cast(const std::string& str) {
+  uint64_t uint64_t_cast(const std::string& str) {
     if (!is_uint64_t(str)) {
       throw std::out_of_range("String provided is not a valid uint64_t");
     }
@@ -141,11 +141,12 @@ namespace monero_utils
 
     return value;
   }
-  static std::string tx_hex_to_hash(std::string hex);
+  
+  std::string tx_hex_to_hash(std::string hex);
 
   //------------------------------------------------------------------------------------------------------------------------------
   template<typename Ts, typename Tu, typename Tk, typename Ta>
-  static bool fill_response(tools::wallet2* m_w2, std::vector<tools::wallet2::pending_tx> &ptx_vector,
+  bool fill_response(tools::wallet2* m_w2, std::vector<tools::wallet2::pending_tx> &ptx_vector,
       bool get_tx_key, Ts& tx_key, Tu &amount, Ta &amounts_by_dest, Tu &fee, Tu &weight, std::string &multisig_txset, std::string &unsigned_txset, bool do_not_relay,
       Ts &tx_hash, bool get_tx_hex, Ts &tx_blob, bool get_tx_metadata, Ts &tx_metadata, Tk &spent_key_images, epee::json_rpc::error &er)
   {
