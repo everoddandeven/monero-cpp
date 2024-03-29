@@ -567,25 +567,6 @@ std::string monero_utils::ptx_to_string(const tools::wallet2::pending_tx &ptx)
   return epee::string_tools::buff_to_hex_nodelimer(oss.str());
 }
 //------------------------------------------------------------------------------------------------------------------------------
-template<typename T> bool monero_utils::is_error_value(const T &val) { return false; }
-bool monero_utils::is_error_value(const std::string &s) { return s.empty(); }
-//------------------------------------------------------------------------------------------------------------------------------
-template<typename T, typename V>
-bool monero_utils::fill(T &where, V s)
-{
-  if (is_error_value(s)) return false;
-  where = std::move(s);
-  return true;
-}
-//------------------------------------------------------------------------------------------------------------------------------
-template<typename T, typename V>
-bool monero_utils::fill(std::list<T> &where, V s)
-{
-  if (is_error_value(s)) return false;
-  where.emplace_back(std::move(s));
-  return true;
-}
-//------------------------------------------------------------------------------------------------------------------------------
 uint64_t monero_utils::total_amount(const tools::wallet2::pending_tx &ptx)
 {
   uint64_t amount = 0;
@@ -626,87 +607,6 @@ std::string monero_utils::tx_hex_to_hash(std::string hex) {
 
   return epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx));
 }
-
-  //------------------------------------------------------------------------------------------------------------------------------
-  template<typename Ts, typename Tu, typename Tk, typename Ta>
-  bool fill_response(tools::wallet2* m_w2, std::vector<tools::wallet2::pending_tx> &ptx_vector,
-      bool get_tx_key, Ts& tx_key, Tu &amount, Ta &amounts_by_dest, Tu &fee, Tu &weight, std::string &multisig_txset, std::string &unsigned_txset, bool do_not_relay,
-      Ts &tx_hash, bool get_tx_hex, Ts &tx_blob, bool get_tx_metadata, Ts &tx_metadata, Tk &spent_key_images, epee::json_rpc::error &er)
-  {
-    for (const auto & ptx : ptx_vector)
-    {
-      if (get_tx_key)
-      {
-        epee::wipeable_string s = epee::to_hex::wipeable_string(ptx.tx_key);
-        for (const crypto::secret_key& additional_tx_key : ptx.additional_tx_keys)
-          s += epee::to_hex::wipeable_string(additional_tx_key);
-        fill(tx_key, std::string(s.data(), s.size()));
-      }
-      // Compute amount leaving wallet in tx. By convention dests does not include change outputs
-      fill(amount, total_amount(ptx));
-      fill(fee, ptx.fee);
-      fill(weight, cryptonote::get_transaction_weight(ptx.tx));
-
-      // add amounts by destination
-      tools::wallet_rpc::amounts_list abd;
-      for (const auto& dst : ptx.dests)
-        abd.amounts.push_back(dst.amount);
-      fill(amounts_by_dest, abd);
-
-      // add spent key images
-      key_image_list key_image_list;
-      bool all_are_txin_to_key = std::all_of(ptx.tx.vin.begin(), ptx.tx.vin.end(), [&](const cryptonote::txin_v& s_e) -> bool
-      {
-        CHECKED_GET_SPECIFIC_VARIANT(s_e, const cryptonote::txin_to_key, in, false);
-        key_image_list.key_images.push_back(epee::string_tools::pod_to_hex(in.k_image));
-        return true;
-      });
-      THROW_WALLET_EXCEPTION_IF(!all_are_txin_to_key, tools::error::unexpected_txin_type, ptx.tx);
-      fill(spent_key_images, key_image_list);
-    }
-
-    if (m_w2->multisig())
-    {
-      multisig_txset = epee::string_tools::buff_to_hex_nodelimer(m_w2->save_multisig_tx(ptx_vector));
-      if (multisig_txset.empty())
-      {
-        er.code = WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR;
-        er.message = "Failed to save multisig tx set after creation";
-        return false;
-      }
-    }
-    else
-    {
-      if (m_w2->watch_only()){
-        unsigned_txset = epee::string_tools::buff_to_hex_nodelimer(m_w2->dump_tx_to_str(ptx_vector));
-        if (unsigned_txset.empty())
-        {
-          er.code = WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR;
-          er.message = "Failed to save unsigned tx set after creation";
-          return false;
-        }
-      }
-      else if (!do_not_relay)
-        m_w2->commit_tx(ptx_vector);
-
-      // populate response with tx hashes
-      for (auto & ptx : ptx_vector)
-      {
-        bool r = fill(tx_hash, epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx)));
-        r = r && (!get_tx_hex || fill(tx_blob, epee::string_tools::buff_to_hex_nodelimer(tx_to_blob(ptx.tx))));
-        r = r && (!get_tx_metadata || fill(tx_metadata, ptx_to_string(ptx)));
-        if (!r)
-        {
-          er.code = WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR;
-          er.message = "Failed to save tx info";
-          return false;
-        }
-      }
-    }
-    return true;
-  }
-
-
 
 // --------------------------- LOG UTILS -------------------------------
 
