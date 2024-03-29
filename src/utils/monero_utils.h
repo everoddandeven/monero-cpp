@@ -106,7 +106,7 @@ namespace monero_utils
   std::string ptx_to_string(const tools::wallet2::pending_tx &ptx);
   //------------------------------------------------------------------------------------------------------------------------------
   template<typename T> bool is_error_value(const T &val) { return false; }
-  bool is_error_value(const std::string &s) { return s.empty(); }
+  template<> bool is_error_value<std::string>(const std::string &s) { return s.empty(); }
   //------------------------------------------------------------------------------------------------------------------------------
   template<typename T, typename V>
   bool fill(T &where, V s)
