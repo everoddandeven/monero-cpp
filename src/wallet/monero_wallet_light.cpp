@@ -2045,6 +2045,8 @@ void monero_wallet_light::init_common() {
 }
 
 void monero_wallet_light::calculate_balances() {
+  MINFO("calculate_balances()");
+
   uint64_t total_received = 0;
   uint64_t total_sent = 0;
   uint64_t total_pending_received = 0;
@@ -2052,22 +2054,30 @@ void monero_wallet_light::calculate_balances() {
   uint64_t total_pending_sent = 0;
   uint64_t total_locked_received = 0;
   uint64_t total_locked_sent = 0;
+  MINFO("calculate_balances(): transactions " << m_transactions.size());
 
   for (monero_light_transaction transaction : m_transactions) {
-  if (transaction.m_mempool != boost::none && transaction.m_mempool.get()) {
-    total_pending_sent += monero_utils::uint64_t_cast(transaction.m_total_sent.get());
-    total_pending_received += monero_utils::uint64_t_cast(transaction.m_total_received.get());
-  } else {
-    // transaction has confirmations
-    uint64_t tx_confirmations = m_scanned_block_height - transaction.m_height.get();
-    if (tx_confirmations < 10) {
-      if (!is_view_only()) total_locked_sent += monero_utils::uint64_t_cast(transaction.m_total_sent.get());
-      total_locked_received += monero_utils::uint64_t_cast(transaction.m_total_received.get());
+    MINFO("calculate_balances(): processing transaction " << transaction.m_hash.get());
+
+    if (transaction.m_mempool != boost::none && transaction.m_mempool.get()) {
+      MINFO("calculate_balances(): A");
+      total_pending_sent += monero_utils::uint64_t_cast(transaction.m_total_sent.get());
+      total_pending_received += monero_utils::uint64_t_cast(transaction.m_total_received.get());
+    } else {
+      MINFO("calculate_balances(): B");
+      // transaction has confirmations
+      uint64_t tx_confirmations = m_scanned_block_height - transaction.m_height.get();
+
+      if (tx_confirmations < 10) {
+        if (!is_view_only()) total_locked_sent += monero_utils::uint64_t_cast(transaction.m_total_sent.get());
+        total_locked_received += monero_utils::uint64_t_cast(transaction.m_total_received.get());
+      }
+
+      total_received += monero_utils::uint64_t_cast(transaction.m_total_received.get());
+      if (!is_view_only()) total_sent += monero_utils::uint64_t_cast(transaction.m_total_sent.get());
     }
 
-    total_received += monero_utils::uint64_t_cast(transaction.m_total_received.get());
-    if (!is_view_only()) total_sent += monero_utils::uint64_t_cast(transaction.m_total_sent.get());
-  }
+    MINFO("calculate_balances(): C");
   }
 
   m_balance = total_received - total_sent;
