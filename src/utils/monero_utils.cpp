@@ -671,36 +671,6 @@ static bool monero_utils::fill_response(tools::wallet2* m_w2, std::vector<tools:
   return true;
 }
 
-static bool monero_utils::is_uint64_t(const std::string& str) {
-  try {
-    uint64_t sz;
-    std::stol(str, &sz);
-    return sz == str.size();
-  } 
-  catch (const std::invalid_argument&) {
-    // if no conversion could be performed.
-    return false;   
-  } 
-  catch (const std::out_of_range&) {
-    //  if the converted value would fall out of the range of the result type.
-    return false;
-  }
-}
-
-static uint64_t monero_utils::uint64_t_cast(const std::string& str) {
-  if (!is_uint64_t(str)) {
-    throw std::out_of_range("String provided is not a valid uint64_t");
-  }
-
-  uint64_t value;
-  
-  std::istringstream itr(str);
-
-  itr >> value;
-
-  return value;
-}
-
 static std::string monero_utils::tx_hex_to_hash(std::string hex) {
   cryptonote::blobdata blob;
   if (!epee::string_tools::parse_hexstr_to_binbuff(hex, blob))

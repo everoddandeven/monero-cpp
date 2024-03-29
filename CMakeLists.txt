@@ -414,7 +414,7 @@ endif()
 
 
 ########################
-# Build C++ sample Code
+# Build C++ Light wallet test
 ########################
 
 if (BUILD_LIGHT_TESTS)
