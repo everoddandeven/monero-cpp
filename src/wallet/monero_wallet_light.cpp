@@ -1655,9 +1655,7 @@ void monero_wallet_light::rescan_blockchain() {
 }
 
 std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs()  const {
-  monero_tx_query query;
-
-  return get_txs(query);
+  return get_txs(monero_tx_query());
 }
 
 std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(const monero_tx_query& query) const {
@@ -1701,6 +1699,8 @@ std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(cons
     tx_wallet->m_inputs = std::vector<std::shared_ptr<monero::monero_output>>();
     uint64_t inputs_sum = 0;
 
+    if (tx_wallet->m_is_outgoing == boost::none) throw std::runtime_error("Could not determine tx direction!");
+
     if(tx_wallet->m_is_outgoing.get()) {
       bool append_tx = false;
       for(auto spent_output : light_tx.m_spent_outputs.get())
@@ -1736,8 +1736,9 @@ std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(cons
     tx_wallet->m_fee = monero_utils::uint64_t_cast(light_tx.m_fee.get());
     tx_wallet->m_is_failed = false;    
     tx_wallet->m_block.get()->m_txs.push_back(tx_wallet);
-
+    MINFO("before quesry meets criteria");
     if (query.meets_criteria(tx_wallet.get())) txs.push_back(tx_wallet);
+    MINFO("after query meets criteria.");
   }
 
   return txs;
