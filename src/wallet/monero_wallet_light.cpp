@@ -1335,7 +1335,9 @@ monero_sync_result monero_wallet_light::sync_aux() {
   m_scanned_block_height = response.m_scanned_block_height.get();
   m_blockchain_height = response.m_blockchain_height.get();
 
-  m_raw_transactions = response.m_transactions.get();
+  if (response.m_transactions == boost::none) m_raw_transactions = std::vector<monero_light_transaction>();
+  else m_raw_transactions = response.m_transactions.get();
+
   m_transactions = std::vector<monero_light_transaction>();
   for (const monero_light_transaction& raw_transaction : m_raw_transactions) {
     std::shared_ptr<monero_light_transaction> transaction_ptr = std::make_shared<monero_light_transaction>(raw_transaction);
@@ -1386,7 +1388,7 @@ monero_sync_result monero_wallet_light::sync_aux() {
       m_light_wallet_address_txs.emplace(tx_hash,address_tx);
     }
   }
-
+  MINFO("sync_aux(): before calculate_balances()");
   calculate_balances();
 
   result.m_num_blocks_fetched = m_scanned_block_height - old_scanned_height;
@@ -1397,10 +1399,11 @@ monero_sync_result monero_wallet_light::sync_aux() {
     m_w2->refresh(m_w2->is_trusted_daemon(), m_start_height, result.m_num_blocks_fetched, result.m_received_money, true);
     // find and save rings
     m_w2->find_and_save_rings(false);
+    MINFO("sync_aux(): wallet2 refreshed");
   } catch (...) {
     MINFO("Error occurred while w2 refresh");
   }
-
+  MINFO("End sync_aux()");
   return result;
 }
 
