@@ -180,6 +180,9 @@ std::shared_ptr<monero_light_transaction> monero_light_transaction::deserialize(
   // convert config property tree to monero_wallet_config
   std::shared_ptr<monero_light_transaction> transaction = std::make_shared<monero_light_transaction>();
   transaction->m_spent_outputs = std::vector<monero_light_spend>();
+  transaction->m_coinbase = false;
+  transaction->m_total_received = "0";
+  transaction->m_total_sent = "0";
 
   for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
       std::string key = it->first;
@@ -1684,7 +1687,7 @@ std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(cons
       // pure outgoing tx
       tx_wallet->m_is_outgoing = true;
       tx_wallet->m_is_incoming = false;
-    } else if (light_tx.m_coinbase.get()) {
+    } else if (light_tx.m_coinbase != boost::none && light_tx.m_coinbase.get()) {
       tx_wallet->m_is_incoming = true;
       tx_wallet->m_is_outgoing = false;
     } else if(total_received < total_sent && light_tx.m_spent_outputs != boost::none && !light_tx.m_spent_outputs.get().empty()) {
