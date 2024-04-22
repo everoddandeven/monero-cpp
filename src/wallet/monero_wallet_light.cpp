@@ -82,6 +82,24 @@ namespace monero {
 
 // ------------------------------- DESERIALIZE UTILS -------------------------------
 
+std::shared_ptr<monero_light_address_meta> monero_light_address_meta::deserialize(const std::string& config_json) {
+  // deserialize monero output json to property node
+  std::istringstream iss = config_json.empty() ? std::istringstream() : std::istringstream(config_json);
+  boost::property_tree::ptree node;
+  boost::property_tree::read_json(iss, node);
+
+  // convert config property tree to monero_wallet_config
+  std::shared_ptr<monero_light_address_meta> address_meta = std::make_shared<monero_light_address_meta>();
+  for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
+    std::string key = it->first;
+
+    if (key == std::string("maj_i")) address_meta->m_maj_i = it->second.get_value<uint32_t>();
+    else if (key == std::string("min_i")) address_meta->m_min_i = it->second.get_value<uint32_t>();
+  }
+
+  return address_meta;
+};
+
 std::shared_ptr<monero_light_output> monero_light_output::deserialize(const std::string& config_json) {
   // deserialize monero output json to property node
   std::istringstream iss = config_json.empty() ? std::istringstream() : std::istringstream(config_json);
@@ -106,6 +124,11 @@ std::shared_ptr<monero_light_output> monero_light_output::deserialize(const std:
       else if (key == std::string("spend_key_images")) for (boost::property_tree::ptree::const_iterator it2 = it->second.begin(); it2 != it->second.end(); ++it2) output->m_spend_key_images.get().push_back(it2->second.data());
       else if (key == std::string("timestamp")) output->m_timestamp = it->second.data();
       else if (key == std::string("height")) output->m_height = it->second.get_value<uint64_t>();
+      else if (key == std::string("recipient")) {
+        std::shared_ptr<monero_light_address_meta> recipient = std::make_shared<monero_light_address_meta>();
+        monero_light_address_meta::from_property_tree(it->second, recipient);
+        output->m_recipient = *recipient;
+      }
   }
 
   return output;
@@ -166,6 +189,11 @@ std::shared_ptr<monero_light_spend> monero_light_spend::deserialize(const std::s
       else if (key == std::string("tx_pub_key")) spend->m_tx_pub_key = it->second.data();
       else if (key == std::string("out_index")) spend->m_out_index = it->second.get_value<uint64_t>();
       else if (key == std::string("mixin")) spend->m_mixin = it->second.get_value<uint32_t>();
+      else if (key == std::string("sender")) {
+        std::shared_ptr<monero_light_address_meta> sender = std::make_shared<monero_light_address_meta>();
+        monero_light_address_meta::from_property_tree(it->second, sender);
+        spend->m_sender = *sender;
+      }
   }
 
   return spend;
@@ -262,7 +290,6 @@ std::shared_ptr<monero_light_random_outputs> monero_light_random_outputs::deseri
 
 std::shared_ptr<monero_light_get_address_info_response> monero_light_get_address_info_response::deserialize(const std::string& config_json) {
   // deserialize monero output json to property node
-  MINFO("monero_light_get_address_info_response::deserialize()");
   std::istringstream iss = config_json.empty() ? std::istringstream() : std::istringstream(config_json);
   boost::property_tree::ptree node;
   boost::property_tree::read_json(iss, node);
@@ -446,6 +473,83 @@ std::shared_ptr<monero_light_submit_raw_tx_response> monero_light_submit_raw_tx_
   return tx;
 }
 
+std::shared_ptr<monero_light_provision_subaddrs_response> monero_light_provision_subaddrs_response::deserialize(const std::string& config_json) {
+  // deserialize monero output json to property node
+  std::istringstream iss = config_json.empty() ? std::istringstream() : std::istringstream(config_json);
+  boost::property_tree::ptree node;
+  boost::property_tree::read_json(iss, node);
+
+  // convert config property tree to monero_wallet_config
+  std::shared_ptr<monero_light_provision_subaddrs_response> response = std::make_shared<monero_light_provision_subaddrs_response>();
+  response->m_all_subaddrs = monero_light_subaddrs();
+
+  for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
+      std::string key = it->first;
+
+      if (key == std::string("new_subaddrs")) {
+        std::shared_ptr<monero_light_subaddrs> new_subaddrs = std::make_shared<monero_light_subaddrs>();
+        monero_light_subaddrs::from_property_tree(it->second, new_subaddrs);
+        response->m_new_subaddrs = *new_subaddrs;
+      } else if (key == std::string("all_subaddrs")) {
+        std::shared_ptr<monero_light_subaddrs> all_subaddrs = std::make_shared<monero_light_subaddrs>();
+        monero_light_subaddrs::from_property_tree(it->second, all_subaddrs);
+        response->m_all_subaddrs = *all_subaddrs;
+      }
+  }
+
+  return response;
+}
+
+std::shared_ptr<monero_light_upsert_subaddrs_response> monero_light_upsert_subaddrs_response::deserialize(const std::string& config_json) {
+  // deserialize monero output json to property node
+  std::istringstream iss = config_json.empty() ? std::istringstream() : std::istringstream(config_json);
+  boost::property_tree::ptree node;
+  boost::property_tree::read_json(iss, node);
+
+  // convert config property tree to monero_wallet_config
+  std::shared_ptr<monero_light_upsert_subaddrs_response> response = std::make_shared<monero_light_upsert_subaddrs_response>();
+  response->m_all_subaddrs = monero_light_subaddrs();
+
+  for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
+      std::string key = it->first;
+
+      if (key == std::string("new_subaddrs")) {
+        std::shared_ptr<monero_light_subaddrs> new_subaddrs = std::make_shared<monero_light_subaddrs>();
+        monero_light_subaddrs::from_property_tree(it->second, new_subaddrs);
+        response->m_new_subaddrs = *new_subaddrs;
+      } else if (key == std::string("all_subaddrs")) {
+        std::shared_ptr<monero_light_subaddrs> all_subaddrs = std::make_shared<monero_light_subaddrs>();
+        monero_light_subaddrs::from_property_tree(it->second, all_subaddrs);
+        response->m_all_subaddrs = *all_subaddrs;
+      }
+  }
+
+  return response;
+}
+
+std::shared_ptr<monero_light_get_subaddrs_response> monero_light_get_subaddrs_response::deserialize(const std::string& config_json) {
+  // deserialize monero output json to property node
+  std::istringstream iss = config_json.empty() ? std::istringstream() : std::istringstream(config_json);
+  boost::property_tree::ptree node;
+  boost::property_tree::read_json(iss, node);
+
+  // convert config property tree to monero_wallet_config
+  std::shared_ptr<monero_light_get_subaddrs_response> response = std::make_shared<monero_light_get_subaddrs_response>();
+  response->m_all_subaddrs = monero_light_subaddrs();
+
+  for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
+      std::string key = it->first;
+      
+      if (key == std::string("all_subaddrs")) {
+        std::shared_ptr<monero_light_subaddrs> all_subaddrs = std::make_shared<monero_light_subaddrs>();
+        monero_light_subaddrs::from_property_tree(it->second, all_subaddrs);
+        response->m_all_subaddrs = *all_subaddrs;
+      }
+  }
+
+  return response;
+}
+
 std::shared_ptr<monero_light_account> monero_light_account::deserialize(const std::string& config_json) {
   // deserialize monero output json to property node
   std::istringstream iss = config_json.empty() ? std::istringstream() : std::istringstream(config_json);
@@ -568,6 +672,58 @@ monero_lws_admin_connection monero_lws_admin_connection::from_property_tree(cons
 
   return *connection;
 }
+
+void monero_light_address_meta::from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_light_address_meta>& address_meta) {
+  // convert config property tree to monero_wallet_config
+  for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
+    std::string key = it->first;
+
+    if (key == std::string("maj_i")) address_meta->m_maj_i = it->second.get_value<uint32_t>();
+    else if (key == std::string("min_i")) address_meta->m_min_i = it->second.get_value<uint32_t>();
+  }
+};
+
+void monero_light_index_range::from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_light_index_range>& index_range) {
+  // convert config property tree to monero_wallet_config
+  int length = 0;
+  
+  for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
+    uint32_t value = it->second.get_value<uint32_t>();
+    index_range->push_back(value);
+    
+    length++;
+    if (length > 2) throw std::runtime_error("Invalid index range length");
+    //if (key == std::string("maj_i")) address_meta->m_maj_i = it->second.get_value<uint32_t>();
+    //else if (key == std::string("min_i")) address_meta->m_min_i = it->second.get_value<uint32_t>();
+  }
+
+  if (length != 2) throw std::runtime_error("Invalid index range length");
+};
+
+void monero_light_subaddrs::from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_light_subaddrs>& subaddrs) {  
+  // convert config property tree to monero_wallet_config
+  boost::optional<uint32_t> _key = boost::none;
+  boost::optional<monero_light_index_range> _index_range = boost::none; 
+  for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
+    boost::property_tree::ptree key_value_node = it->second;
+    boost::optional<uint32_t> _key;
+    boost::optional<monero_light_index_range> index_range;
+    
+    for (boost::property_tree::ptree::const_iterator it2 = key_value_node.begin(); it2 != key_value_node.end(); ++it2) {
+      std::string key = it2->first;
+      if (key == std::string("key")) _key = it2->second.get_value<uint32_t>();
+      else if (key == std::string("value")) {
+        std::shared_ptr<monero_light_index_range> ir = std::make_shared<monero_light_index_range>();
+        monero_light_index_range::from_property_tree(it2->second, ir);
+        index_range = *ir;
+      }
+    }
+
+    if (_key == boost::none || index_range == boost::none) throw std::runtime_error("Invalid subaddress");
+
+    subaddrs->emplace(_key.get(), index_range.get());
+  }
+};
 
 void monero_light_output::from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_light_output>& output) {
   output->m_spend_key_images = std::vector<std::string>();
@@ -840,6 +996,51 @@ rapidjson::Value monero_light_submit_raw_tx_request::to_rapidjson_val(rapidjson:
   return root;
 }
 
+rapidjson::Value monero_light_provision_subaddrs_request::to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const {
+    // create root
+  rapidjson::Value root(rapidjson::kObjectType);
+
+  // set string values
+  rapidjson::Value value_str(rapidjson::kStringType);
+  if (m_address != boost::none) monero_utils::add_json_member("tx", m_address.get(), allocator, root, value_str);
+  if (m_view_key != boost::none) monero_utils::add_json_member("view_key", m_view_key.get(), allocator, root, value_str);
+  if (m_maj_i != boost::none) monero_utils::add_json_member("maj_i", m_maj_i.get(), allocator, root, value_str);
+  if (m_min_i != boost::none) monero_utils::add_json_member("min_i", m_min_i.get(), allocator, root, value_str);
+  if (m_n_maj != boost::none) monero_utils::add_json_member("n_maj", m_n_maj.get(), allocator, root, value_str);
+  if (m_n_min != boost::none) monero_utils::add_json_member("n_min", m_n_min.get(), allocator, root, value_str);
+  if (m_get_all != boost::none) monero_utils::add_json_member("get_all", m_get_all.get(), allocator, root, value_str);
+  else monero_utils::add_json_member("get_all", true, allocator, root, value_str);
+
+  // return root
+  return root;
+}
+
+rapidjson::Value monero_light_upsert_subaddrs_request::to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const {
+    // create root
+  rapidjson::Value root(rapidjson::kObjectType);
+
+  // set string values
+  rapidjson::Value value_str(rapidjson::kStringType);
+  if (m_address != boost::none) monero_utils::add_json_member("tx", m_address.get(), allocator, root, value_str);
+  if (m_view_key != boost::none) monero_utils::add_json_member("view_key", m_view_key.get(), allocator, root, value_str);
+  
+  // return root
+  return root;
+}
+
+rapidjson::Value monero_light_get_subaddrs_request::to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const {
+    // create root
+  rapidjson::Value root(rapidjson::kObjectType);
+
+  // set string values
+  rapidjson::Value value_str(rapidjson::kStringType);
+  if (m_address != boost::none) monero_utils::add_json_member("tx", m_address.get(), allocator, root, value_str);
+  if (m_view_key != boost::none) monero_utils::add_json_member("view_key", m_view_key.get(), allocator, root, value_str);
+
+  // return root
+  return root;
+}
+
 rapidjson::Value monero_light_accept_requests_request::to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const {
 
   // create root
@@ -1001,13 +1202,13 @@ std::shared_ptr<monero_light_transaction> monero_light_transaction::copy(const s
   tgt->m_coinbase = src->m_coinbase;
   tgt->m_mempool = src->m_mempool;
   tgt->m_mixin = src->m_mixin;
+  tgt->m_spent_outputs = std::vector<monero_light_spend>();
 
   if (exclude_spend) {
     return tgt;
   }
 
   if (!src->m_spent_outputs.get().empty()) {
-    tgt->m_spent_outputs = std::vector<monero_light_spend>();
     for (const monero_light_spend& spent_output : src->m_spent_outputs.get()) {
       std::shared_ptr<monero_light_spend> spent_output_ptr = std::make_shared<monero_light_spend>(spent_output);
       std::shared_ptr<monero_light_spend> spent_output_copy = spent_output_ptr->copy(spent_output_ptr, std::make_shared<monero_light_spend>());
@@ -1301,6 +1502,8 @@ bool monero_wallet_light::is_connected_to_admin_daemon() const {
 }
 
 bool monero_wallet_light::is_synced() const {
+  if (!is_connected_to_daemon()) return false;
+  
   monero_light_get_address_info_response address_info = get_address_info();
 
   return address_info.m_blockchain_height.get() == m_scanned_block_height;
@@ -1315,6 +1518,10 @@ bool monero_wallet_light::is_daemon_synced() const {
 void monero_wallet_light::set_restore_height(uint64_t restore_height) {
   monero_wallet_full::set_restore_height(restore_height);
   if (is_connected_to_admin_daemon()) rescan(restore_height);
+}
+
+uint64_t monero_wallet_light::get_height_by_date(uint16_t year, uint8_t month, uint8_t day) const {
+  throw std::runtime_error("get_height_by_date(year, month, day) not supported");
 }
 
 monero_sync_result monero_wallet_light::sync_aux() {
@@ -1336,8 +1543,9 @@ monero_sync_result monero_wallet_light::sync_aux() {
 
   m_transactions = std::vector<monero_light_transaction>();
   for (const monero_light_transaction& raw_transaction : m_raw_transactions) {
+
     std::shared_ptr<monero_light_transaction> transaction_ptr = std::make_shared<monero_light_transaction>(raw_transaction);
-    std::shared_ptr<monero_light_transaction> transaction = transaction_ptr->copy(transaction_ptr, std::make_shared<monero_light_transaction>(),true);
+    std::shared_ptr<monero_light_transaction> transaction = transaction_ptr->copy(transaction_ptr, std::make_shared<monero_light_transaction>(), false);
     uint64_t total_received = monero_utils::uint64_t_cast(transaction->m_total_received.get());
     
     if (!result.m_received_money) result.m_received_money = total_received > 0;
@@ -1384,22 +1592,34 @@ monero_sync_result monero_wallet_light::sync_aux() {
       m_light_wallet_address_txs.emplace(tx_hash,address_tx);
     }
   }
-  MINFO("sync_aux(): before calculate_balances()");
+  
+  monero_light_get_unspent_outs_response unspent_outs_response = get_unspent_outs();
+
+  m_unspent_outputs = std::vector<monero_light_output>();
+
+  if (unspent_outs_response.m_outputs != boost::none) m_unspent_outputs = unspent_outs_response.m_outputs.get();
+
   calculate_balances();
 
   result.m_num_blocks_fetched = m_scanned_block_height - old_scanned_height;
   result.m_received_money = false; // to do
   
+  try {
+    get_subaddrs();
+    m_daemon_supports_subaddresses = true;
+  } catch (...) {
+    MINFO("Light wallet server doesn't support subaddresses");
+    m_daemon_supports_subaddresses = false;
+  }
+
   // attempt to refresh wallet2 which may throw exception
   try {
     m_w2->refresh(m_w2->is_trusted_daemon(), m_start_height, result.m_num_blocks_fetched, result.m_received_money, true);
     // find and save rings
     m_w2->find_and_save_rings(false);
-    MINFO("sync_aux(): wallet2 refreshed");
   } catch (...) {
-    MINFO("Error occurred while w2 refresh");
+    MINFO("Error occurred while wallet2 refresh");
   }
-  MINFO("End sync_aux()");
   return result;
 }
 
@@ -1589,6 +1809,14 @@ void monero_wallet_light::start_syncing(uint64_t sync_period_in_ms) {
   }
 }
 
+void monero_wallet_light::scan_txs(const std::vector<std::string>& tx_hashes) {
+  throw std::runtime_error("scan_txs() not supported");
+}
+
+void monero_wallet_light::rescan_spent() {
+  throw std::runtime_error("rescan_spent() not supported");
+}
+
 void monero_wallet_light::run_sync_loop() {
   if (m_sync_loop_running) return;  // only run one loop at a time
   m_sync_loop_running = true;
@@ -1654,17 +1882,115 @@ void monero_wallet_light::rescan_blockchain() {
   }
 }
 
+uint64_t monero_wallet_light::get_balance() const { 
+  uint64_t total_balance = 0;
+
+  for(monero_account account : get_accounts(false, std::string(""))) {
+    total_balance += get_balance(account.m_index.get());
+  }
+  
+  return total_balance;
+}
+
+uint64_t monero_wallet_light::get_balance(uint32_t account_idx) const { 
+  if (account_idx == 0) return m_balance;
+
+  monero_account account = get_account(account_idx, true);
+  uint64_t account_balance = get_balance(account_idx, 0);
+
+  for(monero_subaddress subaddress : account.m_subaddresses) {
+    account_balance += get_balance(account_idx, subaddress.m_index.get());
+  }
+
+  return account_balance;
+}
+
+uint64_t monero_wallet_light::get_balance(uint32_t account_idx, uint32_t subaddress_idx) const { 
+  uint64_t balance = 0;
+
+  monero_output_query output_query;
+  output_query.m_account_index = account_idx;
+  output_query.m_subaddress_index = subaddress_idx;
+  output_query.m_is_spent = false;
+
+  std::vector<std::shared_ptr<monero_output_wallet>> outputs = get_outputs(output_query);
+
+  for(std::shared_ptr<monero_output_wallet> output : outputs) balance += output->m_amount.get();
+
+  return balance;
+};
+
+uint64_t monero_wallet_light::get_unlocked_balance() const { 
+  uint64_t total_balance = 0;
+
+  for(monero_account account : get_accounts(false, std::string(""))) total_balance += get_unlocked_balance(account.m_index.get());
+  
+  return total_balance;
+}
+
+uint64_t monero_wallet_light::get_unlocked_balance(uint32_t account_idx) const { 
+  if (account_idx == 0) return m_balance;
+
+  monero_account account = get_account(account_idx, true);
+  uint64_t account_balance = get_unlocked_balance(account_idx, 0);
+
+  for(monero_subaddress subaddress : account.m_subaddresses) account_balance += get_unlocked_balance(account_idx, subaddress.m_index.get());
+
+  return account_balance;
+}
+
+uint64_t monero_wallet_light::get_unlocked_balance(uint32_t account_idx, uint32_t subaddress_idx) const { 
+  uint64_t balance = 0;
+
+  monero_output_query output_query;
+  output_query.m_account_index = account_idx;
+  output_query.m_subaddress_index = subaddress_idx;
+  output_query.m_is_spent = false;
+  output_query.m_tx_query = std::make_shared<monero_tx_query>();
+  output_query.m_tx_query.get()->m_is_confirmed = true;
+
+  std::vector<std::shared_ptr<monero_output_wallet>> outputs = get_outputs(output_query);
+
+  for(std::shared_ptr<monero_output_wallet> output : outputs) {    
+    balance += output->m_amount.get();
+  }
+
+  return balance;
+};
+
+monero_account monero_wallet_light::create_account(const std::string& label) {
+  monero_account account = monero_wallet_full::create_account(label);
+  if(!m_daemon_supports_subaddresses) return account;
+  monero_light_index_range index_range(0, 0);
+  
+  monero_light_subaddrs subaddrs;
+  subaddrs.emplace(account.m_index.get(), index_range);
+
+  upsert_subaddrs(subaddrs);
+  return account;
+}
+
+monero_subaddress monero_wallet_light::create_subaddress(const uint32_t account_idx, const std::string& label) {
+  // initialize and return result
+  monero_subaddress subaddress = monero_wallet_full::create_subaddress(account_idx, label);
+  if(!m_daemon_supports_subaddresses) return subaddress;
+  uint32_t subaddr_idx = subaddress.m_index.get();
+  monero_light_index_range index_range(subaddr_idx, subaddr_idx);
+  
+  monero_light_subaddrs subaddrs;
+  subaddrs.emplace(account_idx, index_range);
+
+  upsert_subaddrs(subaddrs);
+
+  return subaddress;
+}
+
 std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs()  const {
   return get_txs(monero_tx_query());
 }
 
 std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(const monero_tx_query& query) const {
-  MINFO("monero_wallet_light::get_txs(monero_tx_query)");
   std::vector<std::shared_ptr<monero_tx_wallet>> txs = std::vector<std::shared_ptr<monero_tx_wallet>>();
-
-  if (m_transactions.empty()) {
-    MINFO("Empty txs!");
-  }
 
   for (monero_light_transaction light_tx : m_transactions) {
     std::shared_ptr<monero_tx_wallet> tx_wallet = std::make_shared<monero_tx_wallet>();
@@ -1674,8 +2000,12 @@ std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(cons
 
     tx_wallet->m_hash = light_tx.m_hash;
     tx_wallet->m_is_relayed = true;
-    uint64_t total_sent = monero_utils::uint64_t_cast(light_tx.m_total_sent.get());
-    uint64_t total_received = monero_utils::uint64_t_cast(light_tx.m_total_received.get());
+
+    std::string total_sent_str = light_tx.m_total_sent.get();
+    std::string total_received_str = light_tx.m_total_received.get();
+
+    uint64_t total_sent = monero_utils::uint64_t_cast(total_sent_str);
+    uint64_t total_received = monero_utils::uint64_t_cast(total_received_str);
 
     if (total_sent == 0 && total_received > 0) {
       // pure incoming tx
@@ -1688,7 +2018,8 @@ std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(cons
     } else if (light_tx.m_coinbase != boost::none && light_tx.m_coinbase.get()) {
       tx_wallet->m_is_incoming = true;
       tx_wallet->m_is_outgoing = false;
-    } else if(total_received < total_sent && light_tx.m_spent_outputs != boost::none && !light_tx.m_spent_outputs.get().empty()) {
+    } else if(total_received < total_sent) {
+      if(light_tx.m_spent_outputs == boost::none || light_tx.m_spent_outputs.get().empty()) throw std::runtime_error("could not determine tx direction: spent outputs are empty");
       // outgoing tx with change
       tx_wallet->m_is_outgoing = true;
       tx_wallet->m_is_incoming = false;
@@ -1699,7 +2030,7 @@ std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(cons
     tx_wallet->m_inputs = std::vector<std::shared_ptr<monero::monero_output>>();
     uint64_t inputs_sum = 0;
 
-    if (tx_wallet->m_is_outgoing == boost::none) throw std::runtime_error("Could not determine tx direction!");
+    if (tx_wallet->m_is_outgoing == boost::none) throw std::runtime_error("Could not determine tx direction! total sent:" + total_sent_str + ", total received: " + total_received_str);
 
     if(tx_wallet->m_is_outgoing.get()) {
       bool append_tx = false;
@@ -1707,11 +2038,21 @@ std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(cons
       {        
         if(key_image_is_ours(spent_output.m_key_image.get(), spent_output.m_tx_pub_key.get(), spent_output.m_out_index.get())) {
           append_tx = true;
-          std::shared_ptr<monero::monero_output> s_output = std::make_shared<monero::monero_output_wallet>();
+          std::shared_ptr<monero::monero_output_wallet> s_output = std::make_shared<monero::monero_output_wallet>();
           s_output->m_amount = monero_utils::uint64_t_cast(spent_output.m_amount.get());
           s_output->m_index = spent_output.m_out_index.get();
           s_output->m_key_image = std::make_shared<monero::monero_key_image>();
           s_output->m_key_image.get()->m_hex = spent_output.m_key_image.get();
+
+          if (spent_output.m_sender != boost::none) {
+            monero_light_address_meta sender = spent_output.m_sender.get();
+            s_output->m_account_index = sender.m_maj_i.get();
+            s_output->m_subaddress_index = sender.m_min_i.get();
+          } else {
+            s_output->m_account_index = 0;
+            s_output->m_subaddress_index = 0;
+          }
+
           tx_wallet->m_inputs.push_back(s_output);
           s_output->m_tx = tx_wallet;
           inputs_sum += s_output->m_amount.get();
@@ -1736,9 +2077,7 @@ std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(cons
     tx_wallet->m_fee = monero_utils::uint64_t_cast(light_tx.m_fee.get());
     tx_wallet->m_is_failed = false;    
     tx_wallet->m_block.get()->m_txs.push_back(tx_wallet);
-    MINFO("before quesry meets criteria");
     if (query.meets_criteria(tx_wallet.get())) txs.push_back(tx_wallet);
-    MINFO("after query meets criteria.");
   }
 
   return txs;
@@ -1761,7 +2100,6 @@ std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(cons
  * @return wallet transfers per the query (free memory using monero_utils::free)
  */
 std::vector<std::shared_ptr<monero_transfer>> monero_wallet_light::get_transfers(const monero_transfer_query& query) const {
-  MINFO("monero_wallet_light::get_transfers(monero_transfer_query&)");
   std::vector<std::shared_ptr<monero_transfer>> transfers = std::vector<std::shared_ptr<monero_transfer>>();
 
   for (monero_light_transaction light_tx : m_transactions) {
@@ -1804,8 +2142,18 @@ std::vector<std::shared_ptr<monero_transfer>> monero_wallet_light::get_transfers
       for(auto light_spent_output : light_tx.m_spent_outputs.get()) {
         if (spend_object_is_ours(light_spent_output)) {
           std::shared_ptr<monero_output_wallet> spent_output = std::make_shared<monero_output_wallet>();
-          spent_output->m_account_index = 0;
-          //spent_output->m_index = monero_utils::uint64_t_cast(light_spent_output.m_out_index.get());
+          
+          if (light_spent_output.m_sender != boost::none) {
+            monero_light_address_meta sender = light_spent_output.m_sender.get();
+
+            spent_output->m_account_index = sender.m_maj_i.get();
+            spent_output->m_subaddress_index = sender.m_min_i.get();
+          }
+          else {
+            spent_output->m_account_index = 0;
+            spent_output->m_subaddress_index = 0;
+          }
+          //spent_output->m_index = light_spent_output.m_out_index.get();
           spent_output->m_is_spent = true;
           spent_output->m_amount = monero_utils::uint64_t_cast(light_spent_output.m_amount.get());
           transfer->m_tx->m_outputs.push_back(spent_output);
@@ -1814,34 +2162,31 @@ std::vector<std::shared_ptr<monero_transfer>> monero_wallet_light::get_transfers
     }
 
     transfer->m_tx->m_block.get()->m_txs.push_back(transfer->m_tx);
-
-    transfers.push_back(transfer);
+    if (query.meets_criteria(transfer.get())) transfers.push_back(transfer);
   }
 
   return transfers;
 }
 
-std::vector<std::shared_ptr<monero_output_wallet>> monero_wallet_light::get_outputs() const {
-  const monero_output_query query;
-  
-  return get_outputs(query);
+std::vector<std::shared_ptr<monero_output_wallet>> monero_wallet_light::get_outputs() const {  
+  return get_outputs(monero_output_query());
 }
 
 std::vector<std::shared_ptr<monero_output_wallet>> monero_wallet_light::get_outputs(const monero_output_query& query) const {
-  MINFO("monero_wallet_light::get_outputs(monero_output_query&)");
-  monero_light_get_unspent_outs_response response = get_unspent_outs();
-
   std::vector<std::shared_ptr<monero_output_wallet>> outputs = std::vector<std::shared_ptr<monero_output_wallet>>();
 
-  if (response.m_outputs == boost::none || response.m_outputs.get().empty()) {
-    MINFO("monero_wallet_light::get_outputs: response outputs is empty");
-    return outputs;
-  }
-
-  for(monero_light_output light_output : response.m_outputs.get()) {
+  for(monero_light_output light_output : m_unspent_outputs) {
     bool valid_tx_hex = string_tools::validate_hex(64, light_output.m_tx_pub_key.get());
     std::shared_ptr<monero_output_wallet> output = std::make_shared<monero_output_wallet>();
-    output->m_account_index = 0;
+    
+    if (light_output.m_recipient != boost::none) {
+      monero_light_address_meta recipient = light_output.m_recipient.get();
+
+      output->m_account_index = recipient.m_maj_i.get();
+      output->m_subaddress_index = recipient.m_min_i.get();
+    }
+
+    else output->m_account_index = 0;
     output->m_index = monero_utils::uint64_t_cast(light_output.m_global_index.get());
     output->m_subaddress_index = 0;
     output->m_amount = monero_utils::uint64_t_cast(light_output.m_amount.get());
@@ -1936,7 +2281,6 @@ std::shared_ptr<monero_key_image_import_result> monero_wallet_light::import_key_
     }
 
     if (append_key_image) {
-      MINFO("monero_wallet_light::import_key_images importing key image: " << key_image->m_hex.get());
       m_imported_key_images.push_back(key_image);
       has_changes = true;
     }
@@ -1956,8 +2300,6 @@ std::shared_ptr<monero_key_image_import_result> monero_wallet_light::import_key_
 
   // import key images
   uint64_t spent = 0, unspent = 0;
-  MINFO("ski.size(): " << ski.size());
-  MINFO("w2->light_wallet_get_unspent_outs().size(): ");
   m_w2->light_wallet_get_unspent_outs();
   uint64_t height = m_w2->import_key_images(ski, 0, spent, unspent, false); // TODO: use offset? refer to wallet_rpc_server::on_import_key_images() req.offset
   //uint64_t height = 0;
@@ -2063,9 +2405,7 @@ std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::create_txs(c
   auto input_key_images_list_iter = input_key_images_list.begin();
   std::vector<std::shared_ptr<monero_destination>> destinations = config.get_normalized_destinations();
   auto destinations_iter = destinations.begin();
-  MINFO("monero_wallet_light::create_txs before fees iter");
   while (tx_fees_iter != tx_fees.end()) {
-    MINFO("monero_wallet_light::create_txs processing tx hash: " << *tx_hashes_iter);
     // init tx with outgoing transfer from filled values
     std::shared_ptr<monero_tx_wallet> tx = std::make_shared<monero_tx_wallet>();
     txs.push_back(tx);
@@ -2126,7 +2466,6 @@ std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::create_txs(c
     tx_metadatas_iter++;
     input_key_images_list_iter++;
   }
-  MINFO("monero_wallet_light::create_txs after fees iter");
 
   // build tx set
   std::shared_ptr<monero_tx_set> tx_set = std::make_shared<monero_tx_set>();
@@ -2135,13 +2474,11 @@ std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::create_txs(c
   if (!multisig_tx_hex.empty()) tx_set->m_multisig_tx_hex = multisig_tx_hex;
   if (!unsigned_tx_hex.empty()) 
   {
-    MINFO("monero_wallet_light::create_txs appending unsigned tx hex: " << unsigned_tx_hex);
     tx_set->m_unsigned_tx_hex = unsigned_tx_hex;
   }
 
   // notify listeners of spent funds
   //if (relay) m_w2_listener->on_spend_txs(txs);
-  MINFO("monero_wallet_light::create_txs END");
 
   return txs;
 }
@@ -2199,16 +2536,11 @@ void monero_wallet_light::close(bool save) {
 // ------------------------------- PROTECTED HELPERS ----------------------------
 
 void monero_wallet_light::init_common() {
-  MINFO("Super init common");
   monero_wallet_full::init_common();
 
-  MINFO("monero_wallet_light::init_common()");
   m_w2->set_light_wallet(true);
-  MINFO("Creating default listener");
   wallet2_listener *default_listener = new wallet2_listener(*this, *m_w2);
-  MINFO("Default listener created");
   m_w2->callback(default_listener);
-  MINFO("Default listener set to w2");
 
   m_request_pending = false;
   m_request_accepted = false;
@@ -2221,13 +2553,9 @@ void monero_wallet_light::init_common() {
     epee::net_utils::ssl_support_t ssl = m_lws_uri.rfind("https", 0) == 0 ? epee::net_utils::ssl_support_t::e_ssl_support_enabled : epee::net_utils::ssl_support_t::e_ssl_support_disabled;
 
     if(!m_http_client->set_server(m_lws_uri, boost::none)) throw std::runtime_error("Invalid lws address");
-    MINFO("successfully set lw server: " << m_lws_uri);
     if(!m_http_client->connect(m_timeout)) throw std::runtime_error("Could not connect to lws");
-    MINFO("successfully connected to lw server: " << m_lws_uri);
     if(!m_w2->init(m_lws_uri, boost::none, {}, 0, false, ssl)) throw std::runtime_error("Failed to initialize light wallet with daemon connection");
-    MINFO("successfully initialized wallet2");
     login();
-    MINFO("Done login");
   } else {
     throw std::runtime_error("Must provide a lws address");
   }
@@ -2238,14 +2566,9 @@ void monero_wallet_light::init_common() {
   } else {
     m_http_admin_client = nullptr;
   }
-  
-  MINFO("monero_wallet_light::init_common() end");
-
 }
 
 void monero_wallet_light::calculate_balances() {
-  MINFO("calculate_balances()");
-
   uint64_t total_received = 0;
   uint64_t total_sent = 0;
   uint64_t total_pending_received = 0;
@@ -2253,7 +2576,6 @@ void monero_wallet_light::calculate_balances() {
   uint64_t total_pending_sent = 0;
   uint64_t total_locked_received = 0;
   uint64_t total_locked_sent = 0;
-  MINFO("calculate_balances(): transactions " << m_transactions.size());
 
   for (monero_light_transaction transaction : m_transactions) {
     if (transaction.m_mempool != boost::none && transaction.m_mempool.get()) {
@@ -2426,7 +2748,7 @@ monero_light_import_request_response monero_wallet_light::import_request(monero_
   req.Accept(writer);
   std::string body = sb.GetString();
 
-  const epee::net_utils::http::http_response_info *response = post("/import_request", body);
+  const epee::net_utils::http::http_response_info *response = post("/import_wallet_request", body);
   int status_code = response->m_response_code;
 
   if (status_code != 200) {
@@ -2455,8 +2777,6 @@ monero_light_submit_raw_tx_response monero_wallet_light::submit_raw_tx(monero_li
 }
 
 monero_light_login_response monero_wallet_light::login(monero_light_login_request request) {
-  MINFO("monero_wallet_light::login()");
-
   rapidjson::Document document(rapidjson::Type::kObjectType);
   rapidjson::Value req = request.to_rapidjson_val(document.GetAllocator());
   rapidjson::StringBuffer sb;
@@ -2497,6 +2817,57 @@ monero_light_login_response monero_wallet_light::login(monero_light_login_reques
   }
 
   return *monero_light_login_response::deserialize(response->m_body);
+}
+
+monero_light_provision_subaddrs_response monero_wallet_light::provision_subaddrs(monero_light_provision_subaddrs_request request) {
+  rapidjson::Document document(rapidjson::Type::kObjectType);
+  rapidjson::Value req = request.to_rapidjson_val(document.GetAllocator());
+  rapidjson::StringBuffer sb;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+  req.Accept(writer);
+  std::string body = sb.GetString();
+  const epee::net_utils::http::http_response_info *response = post("/provision_subaddrs", body);
+  int status_code = response->m_response_code;
+
+  if (status_code != 200) {
+    throw std::runtime_error("Unknown error on provision subaddrs: " + std::to_string(status_code));
+  }
+
+  return *monero_light_provision_subaddrs_response::deserialize(response->m_body);
+}
+
+monero_light_upsert_subaddrs_response monero_wallet_light::upsert_subaddrs(monero_light_upsert_subaddrs_request request) {
+  rapidjson::Document document(rapidjson::Type::kObjectType);
+  rapidjson::Value req = request.to_rapidjson_val(document.GetAllocator());
+  rapidjson::StringBuffer sb;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+  req.Accept(writer);
+  std::string body = sb.GetString();
+  const epee::net_utils::http::http_response_info *response = post("/upsert_subaddrs", body);
+  int status_code = response->m_response_code;
+
+  if (status_code != 200) {
+    throw std::runtime_error("Unknown error on upsert subaddrs: " + std::to_string(status_code));
+  }
+
+  return *monero_light_upsert_subaddrs_response::deserialize(response->m_body);
+}
+
+monero_light_get_subaddrs_response monero_wallet_light::get_subaddrs(monero_light_get_subaddrs_request request) {
+  rapidjson::Document document(rapidjson::Type::kObjectType);
+  rapidjson::Value req = request.to_rapidjson_val(document.GetAllocator());
+  rapidjson::StringBuffer sb;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+  req.Accept(writer);
+  std::string body = sb.GetString();
+  const epee::net_utils::http::http_response_info *response = post("/get_subaddrs", body);
+  int status_code = response->m_response_code;
+
+  if (status_code != 200) {
+    throw std::runtime_error("Unknown error on upsert subaddrs: " + std::to_string(status_code));
+  }
+
+  return *monero_light_get_subaddrs_response::deserialize(response->m_body);
 }
 
 // ------------------------------- PROTECTED LWS ADMIN HELPERS ----------------------------

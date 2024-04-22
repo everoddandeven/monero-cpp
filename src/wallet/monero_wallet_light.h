@@ -97,6 +97,14 @@ namespace monero {
 
   // ------------------------------- LIGHT WALLET DATA STRUCTURES -------------------------------
 
+  struct monero_light_address_meta {
+    boost::optional<uint32_t> m_maj_i;
+    boost::optional<uint32_t> m_min_i;
+
+    static std::shared_ptr<monero_light_address_meta> deserialize(const std::string& config_json);
+    static void from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_light_address_meta>& address_meta);
+  };
+
   struct monero_light_output {
     boost::optional<uint64_t> m_tx_id;
     boost::optional<std::string> m_amount;
@@ -110,6 +118,7 @@ namespace monero {
     boost::optional<std::vector<std::string>> m_spend_key_images;
     boost::optional<std::string> m_timestamp;
     boost::optional<uint64_t> m_height;
+    boost::optional<monero_light_address_meta> m_recipient;
 
     static std::shared_ptr<monero_light_output> deserialize(const std::string& config_json);
     static void from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_light_output>& output);
@@ -148,11 +157,11 @@ namespace monero {
     boost::optional<std::string> m_tx_pub_key;
     boost::optional<uint64_t> m_out_index;
     boost::optional<uint32_t> m_mixin;
+    boost::optional<monero_light_address_meta> m_sender;
 
     static std::shared_ptr<monero_light_spend> deserialize(const std::string& config_json);
     static void from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_light_spend>& spend);
     std::shared_ptr<monero_light_spend> copy(const std::shared_ptr<monero_light_spend>& src, const std::shared_ptr<monero_light_spend>& tgt) const;
-
   };
 
   struct monero_light_transaction {
@@ -312,6 +321,72 @@ namespace monero {
     boost::optional<std::string> m_status;
     
     static std::shared_ptr<monero_light_submit_raw_tx_response> deserialize(const std::string& config_json);
+  };
+
+  struct monero_light_provision_subaddrs_request {
+    boost::optional<std::string> m_address;
+    boost::optional<std::string> m_view_key;
+    boost::optional<uint32_t> m_maj_i;
+    boost::optional<uint32_t> m_min_i;
+    boost::optional<uint32_t> m_n_maj;
+    boost::optional<uint32_t> m_n_min;
+    boost::optional<bool> m_get_all;
+
+    rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const;    
+  };
+
+  //typedef std::vector<uint32_t> monero_light_index_range;
+
+  class monero_light_index_range : public std::vector<uint32_t> {
+    public:
+      monero_light_index_range(const uint32_t min_i, const uint32_t maj_i) {
+        push_back(min_i);
+        push_back(maj_i);
+      };
+      static void from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_light_index_range>& index_range);
+  };
+
+  //typedef std::map<uint32_t, std::vector<monero_light_index_range>> monero_light_subaddrs;
+
+  class monero_light_subaddrs : public std::map<uint32_t, std::vector<monero_light_index_range>> {
+    public:
+      static void from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_light_subaddrs>& subaddrs);
+  };
+
+  struct monero_light_provision_subaddrs_response {
+    boost::optional<monero_light_subaddrs> m_new_subaddrs;
+    boost::optional<monero_light_subaddrs> m_all_subaddrs;
+
+    static std::shared_ptr<monero_light_provision_subaddrs_response> deserialize(const std::string& config_json);
+  };
+
+  struct monero_light_upsert_subaddrs_request : public serializable_struct {
+    boost::optional<std::string> m_address;
+    boost::optional<std::string> m_view_key;
+    boost::optional<monero_light_subaddrs> m_subaddrs;
+    boost::optional<bool> m_get_all;
+
+    rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const;
+  };
+
+  struct monero_light_upsert_subaddrs_response {
+    boost::optional<monero_light_subaddrs> m_new_subaddrs;
+    boost::optional<monero_light_subaddrs> m_all_subaddrs;
+
+    static std::shared_ptr<monero_light_upsert_subaddrs_response> deserialize(const std::string& config_json);
+  };
+
+  struct monero_light_get_subaddrs_request : public serializable_struct {
+    boost::optional<std::string> m_address;
+    boost::optional<std::string> m_view_key;
+
+    rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const;
+  };
+
+  struct monero_light_get_subaddrs_response {
+    boost::optional<monero_light_subaddrs> m_all_subaddrs;
+
+    static std::shared_ptr<monero_light_get_subaddrs_response> deserialize(const std::string& config_json);
   };
 
   struct monero_light_accept_requests_request : public serializable_struct {
@@ -477,9 +552,7 @@ namespace monero {
     uint64_t get_daemon_height() const override { return m_blockchain_height; };
     uint64_t get_daemon_max_peer_height() const override { return m_blockchain_height; };
     
-    uint64_t get_height_by_date(uint16_t year, uint8_t month, uint8_t day) const override {
-      throw std::runtime_error("get_height_by_date(year, month, day) not supported by light wallet");
-    }
+    uint64_t get_height_by_date(uint16_t year, uint8_t month, uint8_t day) const override;
     
     monero_sync_result sync() override;
     monero_sync_result sync(uint64_t start_height) override;
@@ -487,23 +560,20 @@ namespace monero {
 
     void start_syncing(uint64_t sync_period_in_ms = 10000) override;
 
-    void scan_txs(const std::vector<std::string>& tx_hashes) override {
-      throw std::runtime_error("scan_txs() not supported");
-    }
-
-    void rescan_spent() override {
-      throw std::runtime_error("rescan_spent() not supported");
-    }
-
+    void scan_txs(const std::vector<std::string>& tx_hashes) override;
+    void rescan_spent() override;
     void rescan_blockchain() override;
     
-    uint64_t get_balance() const override { return m_balance; };
-    uint64_t get_balance(uint32_t account_idx) const override { return account_idx == 0 ? get_balance() : 0; };
-    uint64_t get_balance(uint32_t account_idx, uint32_t subaddress_idx) const override { return account_idx == 0 && subaddress_idx == 0 ? get_balance() : 0; };
-    uint64_t get_unlocked_balance() const override { return m_balance_unlocked; };
-    uint64_t get_unlocked_balance(uint32_t account_idx) const override { return account_idx == 0 ? get_balance() : 0; };
-    uint64_t get_unlocked_balance(uint32_t account_idx, uint32_t subaddress_idx) const override { return account_idx == 0 && subaddress_idx == 0 ? get_balance() : 0; };
+    uint64_t get_balance() const override;
+    uint64_t get_balance(uint32_t account_idx) const override;
+    uint64_t get_balance(uint32_t account_idx, uint32_t subaddress_idx) const override;
+    uint64_t get_unlocked_balance() const override;
+    uint64_t get_unlocked_balance(uint32_t account_idx) const override;
+    uint64_t get_unlocked_balance(uint32_t account_idx, uint32_t subaddress_idx) const override;
     
+    monero_account create_account(const std::string& label) override;
+    monero_subaddress create_subaddress(const uint32_t account_idx, const std::string& label) override;
+
     std::vector<std::shared_ptr<monero_tx_wallet>> get_txs() const override;
     std::vector<std::shared_ptr<monero_tx_wallet>> get_txs(const monero_tx_query& query) const override;
     
@@ -534,6 +604,38 @@ namespace monero {
     bool is_multisig_import_needed() const override { return false; }
     bool is_multisig() const override { return false; }
 
+    monero_multisig_info get_multisig_info() const override {
+      throw std::runtime_error("get_multisig_info() not supported");
+    }
+
+    std::string prepare_multisig() override {
+      throw std::runtime_error("prepare_multisig() not supported by light wallet");
+    }
+
+    std::string make_multisig(const std::vector<std::string>& multisig_hexes, int threshold, const std::string& password) override {
+      throw std::runtime_error("make_multisig() not supported by light wallet");
+    }
+
+    monero_multisig_init_result exchange_multisig_keys(const std::vector<std::string>& mutisig_hexes, const std::string& password) override {
+      throw std::runtime_error("exchange_multisig_keys() not supported by light wallet");
+    }
+
+    std::string export_multisig_hex() override {
+      throw std::runtime_error("export_multisig_hex() not supported by light wallet");
+    }
+
+    int import_multisig_hex(const std::vector<std::string>& multisig_hexes) override {
+      throw std::runtime_error("import_multisig_hex() not supported by light wallet");
+    }
+
+    monero_multisig_sign_result sign_multisig_tx_hex(const std::string& multisig_tx_hex) override {
+      throw std::runtime_error("monero_multisig_sign_result() not supported by light wallet");
+    }
+
+    std::vector<std::string> submit_multisig_tx_hex(const std::string& signed_multisig_tx_hex) override {
+      throw std::runtime_error("submit_multisig_tx_hex() not supported by light wallet");
+    }
+
     void close(bool save = false) override;
 
   // --------------------------------- PROTECTED ------------------------------------------
@@ -553,7 +655,9 @@ namespace monero {
 
     bool m_request_pending;
     bool m_request_accepted;
-    
+
+    bool m_daemon_supports_subaddresses = false;
+
     uint64_t m_mixin = 15;
     uint64_t m_start_height = 0;
     uint64_t m_scanned_block_height = 0;
@@ -568,6 +672,7 @@ namespace monero {
     
     std::vector<monero_light_transaction> m_raw_transactions;
     std::vector<monero_light_transaction> m_transactions;
+    std::vector<monero_light_output> m_unspent_outputs;
     tools::wallet2::transfer_container m_transfer_container;
     serializable_unordered_map<crypto::key_image, size_t> m_key_images;
     serializable_unordered_map<crypto::public_key, size_t> m_pub_keys;
@@ -588,7 +693,6 @@ namespace monero {
     };
 
     bool key_image_is_ours(const std::string& key_image, const std::string& tx_public_key, const std::string& out_index) const;
-
     bool key_image_is_ours(const std::string& key_image, const std::string& tx_public_key, uint64_t out_index) const {
       crypto::public_key c_tx_public_key;
       crypto::key_image c_key_image;
@@ -608,11 +712,12 @@ namespace monero {
     bool is_mined_output(monero_light_output output) const;
     void set_unspent(size_t idx);
     bool parse_rct_str(const std::string& rct_string, const crypto::public_key& tx_pub_key, uint64_t internal_output_index, rct::key& decrypted_mask, rct::key& rct_commit, bool decrypt) const;
-    
+
+    bool daemon_supports_subaddresses() { return m_daemon_supports_subaddresses; };
+
     monero_sync_result sync_aux();
     void run_sync_loop();
     monero_sync_result lock_and_sync(boost::optional<uint64_t> start_height = boost::none);  // internal function to synchronize request to sync and rescan
-
 
     // --------------------------------- LIGHT WALLET METHODS ------------------------------------------
     // --------------------------------- LIGHT WALLET CLIENT METHODS ------------------------------------------
@@ -636,6 +741,18 @@ namespace monero {
     monero_light_login_response login(bool create_account = true, bool generated_locally = true) {
       return login(get_primary_address(), get_private_view_key(), create_account, generated_locally);
     }
+
+    monero_light_provision_subaddrs_response provision_subaddrs(uint32_t maj_i, uint32_t min_i, uint32_t n_maj, uint32_t n_min, bool get_all) {
+      return provision_subaddrs(get_primary_address(), get_private_view_key(), maj_i, min_i, n_maj, n_min, get_all);
+    }
+
+    monero_light_get_subaddrs_response get_subaddrs() {
+      return get_subaddrs(get_primary_address(), get_private_view_key());
+    };
+
+    monero_light_upsert_subaddrs_response upsert_subaddrs(monero_light_subaddrs subaddrs, bool get_all = true) {
+      return upsert_subaddrs(get_primary_address(), get_private_view_key(), subaddrs, get_all);
+    };
 
     monero_light_get_address_txs_response get_address_txs(std::string address, std::string view_key) const {
       monero_light_get_address_txs_request request;
@@ -698,6 +815,36 @@ namespace monero {
       return get_address_info(request);
     };
     
+    monero_light_provision_subaddrs_response provision_subaddrs(std::string address, std::string view_key, uint32_t maj_i, uint32_t min_i, uint32_t n_maj, uint32_t n_min, bool get_all) {
+      monero_light_provision_subaddrs_request request;
+      request.m_address = address;
+      request.m_view_key = view_key;
+      request.m_maj_i = maj_i;
+      request.m_min_i = min_i;
+      request.m_n_maj = n_maj;
+      request.m_n_min = n_min;
+      request.m_get_all = get_all;
+      return provision_subaddrs(request);
+    };
+
+    monero_light_upsert_subaddrs_response upsert_subaddrs(std::string address, std::string view_key, monero_light_subaddrs subaddrs, bool get_all) {
+      monero_light_upsert_subaddrs_request request;
+      request.m_address = address;
+      request.m_view_key = view_key;
+      request.m_subaddrs = subaddrs;
+      request.m_get_all = get_all;
+
+      return upsert_subaddrs(request);
+    };
+
+    monero_light_get_subaddrs_response get_subaddrs(std::string address, std::string view_key) {
+      monero_light_get_subaddrs_request request;
+      request.m_address = address;
+      request.m_view_key = view_key;
+
+      return get_subaddrs(request);
+    };
+
     /**
      * Returns the minimal set of information needed to calculate a wallet balance. 
      * The server cannot calculate when a spend occurs without the spend key, so a list of candidate spends is returned.
@@ -748,6 +895,12 @@ namespace monero {
      * @param request
     */
     monero_light_login_response login(monero_light_login_request request);
+
+    monero_light_provision_subaddrs_response provision_subaddrs(monero_light_provision_subaddrs_request request);
+
+    monero_light_upsert_subaddrs_response upsert_subaddrs(monero_light_upsert_subaddrs_request request);
+
+    monero_light_get_subaddrs_response get_subaddrs(monero_light_get_subaddrs_request request);
 
     // --------------------------------- LIGHT WALLET ADMIN METHODS ------------------------------------------
 
