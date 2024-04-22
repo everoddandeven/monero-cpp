@@ -1004,7 +1004,7 @@ rapidjson::Value monero_light_provision_subaddrs_request::to_rapidjson_val(rapid
 
   // set string values
   rapidjson::Value value_str(rapidjson::kStringType);
-  if (m_address != boost::none) monero_utils::add_json_member("tx", m_address.get(), allocator, root, value_str);
+  if (m_address != boost::none) monero_utils::add_json_member("address", m_address.get(), allocator, root, value_str);
   if (m_view_key != boost::none) monero_utils::add_json_member("view_key", m_view_key.get(), allocator, root, value_str);
   if (m_maj_i != boost::none) monero_utils::add_json_member("maj_i", m_maj_i.get(), allocator, root, value_str);
   if (m_min_i != boost::none) monero_utils::add_json_member("min_i", m_min_i.get(), allocator, root, value_str);
@@ -1023,7 +1023,7 @@ rapidjson::Value monero_light_upsert_subaddrs_request::to_rapidjson_val(rapidjso
 
   // set string values
   rapidjson::Value value_str(rapidjson::kStringType);
-  if (m_address != boost::none) monero_utils::add_json_member("tx", m_address.get(), allocator, root, value_str);
+  if (m_address != boost::none) monero_utils::add_json_member("address", m_address.get(), allocator, root, value_str);
   if (m_view_key != boost::none) monero_utils::add_json_member("view_key", m_view_key.get(), allocator, root, value_str);
   
   // return root
@@ -1036,7 +1036,7 @@ rapidjson::Value monero_light_get_subaddrs_request::to_rapidjson_val(rapidjson::
 
   // set string values
   rapidjson::Value value_str(rapidjson::kStringType);
-  if (m_address != boost::none) monero_utils::add_json_member("tx", m_address.get(), allocator, root, value_str);
+  if (m_address != boost::none) monero_utils::add_json_member("address", m_address.get(), allocator, root, value_str);
   if (m_view_key != boost::none) monero_utils::add_json_member("view_key", m_view_key.get(), allocator, root, value_str);
 
   // return root
