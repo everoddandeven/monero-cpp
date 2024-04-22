@@ -339,6 +339,7 @@ namespace monero {
 
   class monero_light_index_range : public std::vector<uint32_t> {
     public:
+      monero_light_index_range() { std::vector<uint32_t>(); }
       monero_light_index_range(const uint32_t min_i, const uint32_t maj_i) {
         push_back(min_i);
         push_back(maj_i);

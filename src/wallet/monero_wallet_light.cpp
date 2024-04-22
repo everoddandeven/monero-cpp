@@ -707,21 +707,23 @@ void monero_light_subaddrs::from_property_tree(const boost::property_tree::ptree
   for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
     boost::property_tree::ptree key_value_node = it->second;
     boost::optional<uint32_t> _key;
-    boost::optional<monero_light_index_range> index_range;
+    std::vector<monero_light_index_range> index_ranges;
     
     for (boost::property_tree::ptree::const_iterator it2 = key_value_node.begin(); it2 != key_value_node.end(); ++it2) {
       std::string key = it2->first;
       if (key == std::string("key")) _key = it2->second.get_value<uint32_t>();
       else if (key == std::string("value")) {
-        std::shared_ptr<monero_light_index_range> ir = std::make_shared<monero_light_index_range>();
-        monero_light_index_range::from_property_tree(it2->second, ir);
-        index_range = *ir;
+        for (boost::property_tree::ptree::const_iterator it3 = it2->second.begin(); it3 != it2->second.end(); ++it2) {
+          std::shared_ptr<monero_light_index_range> ir = std::make_shared<monero_light_index_range>();
+          monero_light_index_range::from_property_tree(it3->second, ir);
+          index_ranges.push_back(*ir);
+        }
       }
     }
 
-    if (_key == boost::none || index_range == boost::none) throw std::runtime_error("Invalid subaddress");
+    if (_key == boost::none) throw std::runtime_error("Invalid subaddress");
 
-    subaddrs->emplace(_key.get(), index_range.get());
+    subaddrs->emplace(_key.get(), index_ranges);
   }
 };
 
@@ -1962,9 +1964,10 @@ monero_account monero_wallet_light::create_account(const std::string& label) {
   monero_account account = monero_wallet_full::create_account(label);
   if(!m_daemon_supports_subaddresses) return account;
   monero_light_index_range index_range(0, 0);
-  
+  std::vector<monero_light_index_range> index_ranges;
+  index_ranges.push_back(index_range);
   monero_light_subaddrs subaddrs;
-  subaddrs.emplace(account.m_index.get(), index_range);
+  subaddrs.emplace(account.m_index.get(), index_ranges);
 
   upsert_subaddrs(subaddrs);
   return account;
@@ -1976,9 +1979,10 @@ monero_subaddress monero_wallet_light::create_subaddress(const uint32_t account_
   if(!m_daemon_supports_subaddresses) return subaddress;
   uint32_t subaddr_idx = subaddress.m_index.get();
   monero_light_index_range index_range(subaddr_idx, subaddr_idx);
-  
+  std::vector<monero_light_index_range> index_ranges;
+  index_ranges.push_back(index_range);
   monero_light_subaddrs subaddrs;
-  subaddrs.emplace(account_idx, index_range);
+  subaddrs.emplace(account_idx, index_ranges);
 
   upsert_subaddrs(subaddrs);
 
