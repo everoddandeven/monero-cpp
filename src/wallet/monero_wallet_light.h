@@ -323,7 +323,7 @@ namespace monero {
     static std::shared_ptr<monero_light_submit_raw_tx_response> deserialize(const std::string& config_json);
   };
 
-  struct monero_light_provision_subaddrs_request {
+  struct monero_light_provision_subaddrs_request : public serializable_struct {
     boost::optional<std::string> m_address;
     boost::optional<std::string> m_view_key;
     boost::optional<uint32_t> m_maj_i;

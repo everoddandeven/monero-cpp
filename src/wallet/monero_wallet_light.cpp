@@ -689,7 +689,9 @@ void monero_light_index_range::from_property_tree(const boost::property_tree::pt
   
   for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
     uint32_t value = it->second.get_value<uint32_t>();
+    MINFO("monero_light_index_range::from_property_tree() pushing value: " << value);
     index_range->push_back(value);
+    MINFO("monero_light_index_range::from_property_tree() pushed value: " << value);
     
     length++;
     if (length > 2) throw std::runtime_error("Invalid index range length");
@@ -703,8 +705,10 @@ void monero_light_index_range::from_property_tree(const boost::property_tree::pt
 void monero_light_subaddrs::from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_light_subaddrs>& subaddrs) {  
   // convert config property tree to monero_wallet_config
   boost::optional<uint32_t> _key = boost::none;
-  boost::optional<monero_light_index_range> _index_range = boost::none; 
+  boost::optional<monero_light_index_range> _index_range = boost::none;
+  MINFO("monero_light_subaddrs::from_property_tree()");
   for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
+    MINFO("monero_light_subaddrs::from_property_tree() found key value node");
     boost::property_tree::ptree key_value_node = it->second;
     boost::optional<uint32_t> _key;
     std::vector<monero_light_index_range> index_ranges;
@@ -713,16 +717,21 @@ void monero_light_subaddrs::from_property_tree(const boost::property_tree::ptree
       std::string key = it2->first;
       if (key == std::string("key")) _key = it2->second.get_value<uint32_t>();
       else if (key == std::string("value")) {
-        for (boost::property_tree::ptree::const_iterator it3 = it2->second.begin(); it3 != it2->second.end(); ++it2) {
+        MINFO("monero_light_subaddrs::from_property_tree() found value");
+        for (boost::property_tree::ptree::const_iterator it3 = it2->second.begin(); it3 != it2->second.end(); ++it3) {
           std::shared_ptr<monero_light_index_range> ir = std::make_shared<monero_light_index_range>();
+          MINFO("monero_light_subaddrs::from_property_tree() creating range");
           monero_light_index_range::from_property_tree(it3->second, ir);
+          MINFO("monero_light_subaddrs::from_property_tree() pushing range");
           index_ranges.push_back(*ir);
+          MINFO("monero_light_subaddrs::from_property_tree() pushed range");
         }
       }
     }
 
     if (_key == boost::none) throw std::runtime_error("Invalid subaddress");
-
+    
+    MINFO("monero_light_subaddrs::from_property_tree() valid key");
     subaddrs->emplace(_key.get(), index_ranges);
   }
 };
@@ -1607,8 +1616,10 @@ monero_sync_result monero_wallet_light::sync_aux() {
   result.m_received_money = false; // to do
   
   try {
+    MINFO("Trying get subaddress");
     get_subaddrs();
     m_daemon_supports_subaddresses = true;
+    MINFO("Got subaddrs");
   } catch (...) {
     MINFO("Light wallet server doesn't support subaddresses");
     m_daemon_supports_subaddresses = false;
@@ -2864,6 +2875,7 @@ monero_light_get_subaddrs_response monero_wallet_light::get_subaddrs(monero_ligh
   rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
   req.Accept(writer);
   std::string body = sb.GetString();
+
   const epee::net_utils::http::http_response_info *response = post("/get_subaddrs", body);
   int status_code = response->m_response_code;
 
