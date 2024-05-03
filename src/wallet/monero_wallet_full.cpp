@@ -73,12 +73,6 @@ using namespace tools;
  * Implements a monero_wallet.h by wrapping wallet2.h.
  */
 namespace monero {
-
-  // ------------------------- INITIALIZE CONSTANTS ---------------------------
-
-  static const int DEFAULT_CONNECTION_TIMEOUT_MILLIS = 1000 * 30; // default connection timeout 30 sec
-  static const bool STRICT_ = false; // relies exclusively on blockchain data if true, includes local wallet data if false TODO: good use case to expose externally? (note: cannot use `STRICT` due to namespace collision on Windows)
-
   // ----------------------------- WALLET LISTENER ----------------------------
 
   wallet2_listener::~wallet2_listener() {
@@ -934,7 +928,7 @@ namespace monero {
     }
 
     // scan txs
-    boost::lock_guard<boost::mutex> guarg(m_sync_mutex); // synchronize scanning
+    boost::lock_guard<boost::recursive_mutex> guarg(m_sync_mutex); // synchronize scanning
     m_w2->scan_tx(tx_hashes);
   }
 
@@ -1248,7 +1242,7 @@ namespace monero {
 
     // build key images from wallet2 types
     std::vector<std::shared_ptr<monero_key_image>> key_images;
-    if (m_w2->light_wallet()) m_w2->light_wallet_get_address_txs();
+    if (m_w2->light_wallet()) m_w2->light_wallet_get_unspent_outs();
     else MINFO("monero_wallet_full::export_key_images(): not a light wallet");
     std::pair<uint64_t, std::vector<std::pair<crypto::key_image, crypto::signature>>> ski = m_w2->export_key_images(all);
     for (uint64_t n = 0; n < ski.second.size(); ++n) {
@@ -1257,6 +1251,7 @@ namespace monero {
       key_image->m_hex = epee::string_tools::pod_to_hex(ski.second[n].first);
       key_image->m_signature = epee::string_tools::pod_to_hex(ski.second[n].second);
     }
+
     return key_images;
   }
 
@@ -2690,7 +2685,7 @@ namespace monero {
   std::string monero_wallet_full::make_multisig(const std::vector<std::string>& multisig_hexes, int threshold, const std::string& password) {
     if (m_w2->multisig()) throw std::runtime_error("This wallet is already multisig");
     if (m_w2->watch_only()) throw std::runtime_error("This wallet is view-only and cannot be made multisig");
-    boost::lock_guard<boost::mutex> guarg(m_sync_mutex);  // do not refresh while making multisig
+    boost::lock_guard<boost::recursive_mutex> guarg(m_sync_mutex);  // do not refresh while making multisig
     return m_w2->make_multisig(epee::wipeable_string(password), multisig_hexes, threshold);
   }
 
@@ -2704,7 +2699,7 @@ namespace monero {
     if (multisig_hexes.size() + 1 < total) throw std::runtime_error("Needs multisig info from more participants");
 
     // do not refresh while exchanging multisig keys
-    boost::lock_guard<boost::mutex> guarg(m_sync_mutex);
+    boost::lock_guard<boost::recursive_mutex> guarg(m_sync_mutex);
 
     // import peer multisig keys and get multisig hex to be shared next round
     std::string multisig_hex = m_w2->exchange_multisig_keys(epee::wipeable_string(password), multisig_hexes);
@@ -3183,7 +3178,7 @@ namespace monero {
 
   monero_sync_result monero_wallet_full::lock_and_sync(boost::optional<uint64_t> start_height) {
     bool rescan = m_rescan_on_sync.exchange(false);
-    boost::lock_guard<boost::mutex> guarg(m_sync_mutex); // synchronize sync() and syncAsync()
+    boost::lock_guard<boost::recursive_mutex> guarg(m_sync_mutex); // synchronize sync() and syncAsync()
     monero_sync_result result;
     result.m_num_blocks_fetched = 0;
     result.m_received_money = false;

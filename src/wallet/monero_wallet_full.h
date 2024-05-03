@@ -65,6 +65,11 @@
  */
 namespace monero {
 
+  // ------------------------- INITIALIZE CONSTANTS ---------------------------
+
+  static const int DEFAULT_CONNECTION_TIMEOUT_MILLIS = 1000 * 30; // default connection timeout 30 sec
+  static const bool STRICT_ = false; // relies exclusively on blockchain data if true, includes local wallet data if false TODO: good use case to expose externally? (note: cannot use `STRICT` due to namespace collision on Windows)
+
   /**
    * Monero wallet implementation which uses monero-project's wallet2.
    */
@@ -252,7 +257,7 @@ namespace monero {
   protected:
     std::unique_ptr<tools::wallet2> m_w2;            // internal wallet implementation
 
-    void init_common();
+    virtual void init_common();
 
   // ---------------------------------- PRIVATE ---------------------------------
 
@@ -264,7 +269,7 @@ namespace monero {
     static monero_wallet_full* create_wallet_from_keys(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
     static monero_wallet_full* create_wallet_random(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
 
-    std::vector<monero_subaddress> get_subaddresses_aux(uint32_t account_idx, const std::vector<uint32_t>& subaddress_indices, const std::vector<tools::wallet2::transfer_details>& transfers) const;
+    virtual std::vector<monero_subaddress> get_subaddresses_aux(uint32_t account_idx, const std::vector<uint32_t>& subaddress_indices, const std::vector<tools::wallet2::transfer_details>& transfers) const;
     std::vector<std::shared_ptr<monero_transfer>> get_transfers_aux(const monero_transfer_query& query) const;
     std::vector<std::shared_ptr<monero_output_wallet>> get_outputs_aux(const monero_output_query& query) const;
     std::vector<std::shared_ptr<monero_tx_wallet>> sweep_account(const monero_tx_config& config);  // sweeps unlocked funds within an account; private helper to sweep_unlocked()
@@ -273,7 +278,7 @@ namespace monero {
     mutable std::atomic<bool> m_is_synced;       // whether or not wallet is synced
     mutable std::atomic<bool> m_is_connected;    // cache connection status to avoid unecessary RPC calls
     boost::condition_variable m_sync_cv;         // to make sync threads woke
-    boost::mutex m_sync_mutex;                   // synchronize sync() and syncAsync() requests
+    mutable boost::recursive_mutex m_sync_mutex;           // synchronize sync() and syncAsync() requests
     std::atomic<bool> m_rescan_on_sync;          // whether or not to rescan on sync
     std::atomic<bool> m_syncing_enabled;         // whether or not auto sync is enabled
     std::atomic<bool> m_sync_loop_running;       // whether or not the syncing thread is shut down
@@ -281,8 +286,8 @@ namespace monero {
     boost::thread m_syncing_thread;              // thread for auto sync loop
     boost::mutex m_syncing_mutex;                // synchronize auto sync loop
     void run_sync_loop();                        // run the sync loop in a thread
-    monero_sync_result lock_and_sync(boost::optional<uint64_t> start_height = boost::none);  // internal function to synchronize request to sync and rescan
-    monero_sync_result sync_aux(boost::optional<uint64_t> start_height = boost::none);       // internal function to immediately block, sync, and report progress
+    virtual monero_sync_result lock_and_sync(boost::optional<uint64_t> start_height = boost::none);  // internal function to synchronize request to sync and rescan
+    virtual monero_sync_result sync_aux(boost::optional<uint64_t> start_height = boost::none);       // internal function to immediately block, sync, and report progress
   };
 
   // -------------------------------- LISTENERS -------------------------------
