@@ -30,9 +30,9 @@ int main(int argc, const char* argv[]) {
   //wallet_config.m_primary_address = "A1y9sbVt8nqhZAVm3me1U18rUVXcjeNKuBd1oE2cTs8biA9cozPMeyYLhe77nPv12JA3ejJN3qprmREriit2fi6tJDi99RR";
   //wallet_config.m_private_view_key = "198820da9166ee114203eb38c29e00b0e8fc7df508aa632d56ead849093d3808";
   //wallet_config.m_private_spend_key = "930755a1918de1a087e68c37accc8160de9f625712425f1b276e7d0dd305120b";
-  wallet_config.m_primary_address = "9yEdYhU2ZAeGTgj9VdjvVk4vvnusdRpegJd98nCbsLh2Jj9xjbiRGFf6ZidwmNaXv5j2yYPZBzrDB9uoP88aJcVkMKHmbqZ";
-  wallet_config.m_private_view_key = "4d0090d149e808beac0a46ee93e0a9a9aeb15d241b5953fde26a821866621d0f";
-  wallet_config.m_private_spend_key = "18fe0c0f6920f2b854329ebb0a3dd8039137cad7c0ff990ed898265b279f9b0c";
+  wallet_config.m_primary_address = "A2sHbJxpEkvMkxM7hyQ3c89gAfCjpZvcaNpG4HSrgdUc8W4WeRiRdvY5FRzHkBWzR5fVj3tMnQbTxgZru5gz1N9ePhv5GSB";
+  wallet_config.m_private_view_key = "b774f4f72d4f3c202a47926f5233e0ab5922a0b4e3d4d49a3c58f333e42c780e";
+  wallet_config.m_private_spend_key = "ca77112364c9b489e42db8d84a0b371de637688636d1bc9ee0278f352cfc250c";
   wallet_config.m_path = "MyLightWalletRestored";
   wallet_config.m_password = "supersecretpassword123";
   wallet_config.m_network_type = monero_network_type::TESTNET;
@@ -41,160 +41,40 @@ int main(int argc, const char* argv[]) {
   wallet_config.m_restore_height = 2338081;
   wallet_config.m_seed_offset = "";
   monero_wallet* wallet_restored = monero_wallet_light::create_wallet(wallet_config);
-  MINFO("===== Wallet Light created successfully =====");
-  /*
-  // synchronize the wallet and receive progress notifications
-  struct : monero_wallet_listener {
-    void on_sync_progress(uint64_t height, uint64_t start_height, uint64_t end_height, double percent_done, const string& message) {
-      // feed a progress bar?
-    }
-  } my_sync_listener;
-  wallet_restored->sync(my_sync_listener);
-  */
- MINFO("===== Syncing wallet light... =====");
+  MINFO("===== Wallet Light created successfully =====");  
+  MINFO("===== Syncing wallet light... =====");
   // start syncing the wallet continuously in the background
   wallet_restored->sync();
+  //wallet_restored->start_syncing(10000);
+  if (!wallet_restored->is_synced()) {
+    MERROR("===== Wallet not synced =====");
+    return 0;
+  }
+
   MINFO("===== Wallet synced =====");
 
-  // get balance, account, subaddresses
-  MINFO("Get primary address");
-  string restored_primary = wallet_restored->get_primary_address();
-  MINFO("Got primary address: " << restored_primary);
-  MINFO("Get balance");
-  uint64_t balance = wallet_restored->get_balance(); // can specify account and subaddress indices
-  MINFO("Got balance: " << balance);
-  MINFO("Get account");
-  monero_account account = wallet_restored->get_account(0, false); // get account without subaddresses
-  MINFO("Got account: " << account.m_index.get());
-  uint64_t unlocked_account_balance = account.m_unlocked_balance.get(); // get boost::optional value
-  MINFO("Got unlocked balance: " << unlocked_account_balance);
-  // query a transaction by hash
-  monero_tx_query tx_query;
-  tx_query.m_hash = "314a0f1375db31cea4dac4e0a51514a6282b43792269b3660166d4d2b46437ca";
-  MINFO("Get txs");
-  vector<shared_ptr<monero_tx_wallet>> txs = wallet_restored->get_txs(tx_query);
-  if (!txs.empty()) {
-    shared_ptr<monero_tx_wallet> tx = txs[0];
-    MINFO("Got tx: " << tx->m_hash.get());
-    for (const shared_ptr<monero_transfer> transfer : tx->get_transfers()) {
-      MINFO("Got transfer tx id: " << transfer->m_tx->m_hash.get());
-      bool is_incoming = transfer->is_incoming().get();
-      uint64_t in_amount = transfer->m_amount.get();
-      int account_index = transfer->m_account_index.get();
-    }
-  } else {
-    MINFO("Txs are empty!");
-  }
-  monero_utils::free(txs);
-
-  MINFO("Exporting outputs...");
-  for(std::shared_ptr<monero_output_wallet> output : wallet_restored->get_outputs(monero_output_query())) {
-    if (output->m_is_spent != boost::none && output->m_is_spent.get()) {
-      MINFO("Got spent output, amount: " << output->m_amount.get() << ", index: " << output->m_index.get());
-    }
-    else {
-      MINFO("Got unspent output amount: " << output->m_amount.get() << ", index: " << output->m_index.get());
-    }
-  }
-  string outputsHex = wallet_restored->export_outputs(true);
-  MINFO("Exported outputs hex: " << outputsHex);
-  return 0;
-
-  // offline wallet sign txs test
-  monero_wallet_config offline_config; 
-  offline_config = wallet_config.copy();
-  offline_config.m_seed = "akin mobile observant polar farming abducts casket regular jeers sickness cuffs decay video exotic blip dove towel vapidly viking greater reinvest jackets jaws lesson video";
-  
-  //offline_config.m_seed = "silk mocked cucumber lettuce hope adrenalin aching lush roles fuel revamp baptism wrist long tender teardrop midst pastry pigment equip frying inbound pinched ravine frying";
-  offline_config.m_path = "MyOfflineWalletRestored";
-  offline_config.m_server = boost::none;
-  monero_wallet *offline_wallet = monero_wallet_full::create_wallet(offline_config);
-  
-  if (wallet_restored->get_primary_address() != offline_wallet->get_primary_address()) {
-    MINFO("restored primary address: " << wallet_restored->get_primary_address() << ", offline primary address: " << offline_wallet->get_primary_address());
-    throw std::runtime_error("Primary address check failed");
-  }
-  if (wallet_restored->get_private_view_key() != offline_wallet->get_private_view_key()) throw std::runtime_error("Private view key check failed");
-  MINFO("Importing outputs"); 
-  if (offline_wallet->is_connected_to_daemon()) throw std::runtime_error("Offline wallet is connected to daemon.");
-  MINFO("[OK] Offline wallet is not connected to daemon");
-  if (offline_wallet->is_view_only()) throw std::runtime_error("Offline wallet is view only.");
-  MINFO("[OK] Offline wallet is not view only");
-  int imported_outputs = offline_wallet->import_outputs(outputsHex);
-  //if (imported_outputs == 0) throw std::runtime_error("Offline wallet has not imported view only outputs.");
-  MINFO("Imported outputs: " << imported_outputs << ", balance: " <<   offline_wallet->get_balance());
-
-  MINFO("Importing signed key images in view only");
-  std::vector<std::shared_ptr<monero_key_image>> signed_key_images = offline_wallet->export_key_images();
-  
-  //if (signed_key_images.empty()) throw std::runtime_error("Offline wallet should have signed key images at this point.");
-  wallet_restored->import_key_images(signed_key_images);
-  MINFO("Imported key images");
-  monero_tx_config tx_config;
-  tx_config.m_account_index = 0;
-  tx_config.m_address = "9xb4UHX1UEKZ1L6KnPXhQKQaC1pmBCtLHah8qBnbwm3yBwZKkSU21cZNgpEwJVwZmzPv7rsdG8Xcd2gGkRorf78NRQrLTfM"; // test receiver wallet
-  tx_config.m_amount = 500000000;
-  tx_config.m_relay = false;
-
-  std::shared_ptr<monero_tx_wallet> unsigned_tx = wallet_restored->create_tx(tx_config);
-  if (unsigned_tx->m_tx_set == boost::none) {
-    MERROR("Transaction set not created");
-    throw std::runtime_error("Transaction set not created");
-  }
-  if (unsigned_tx->m_tx_set.get()->m_signed_tx_hex != boost::none) {
-    MWARNING("Unsigned tx has signed tx hex !!!");
-  }
-  if (unsigned_tx->m_tx_set.get()->m_unsigned_tx_hex == boost::none) {
-    MERROR("Unsigned transaction hex not created");
-    //throw std::runtime_error("Unsigned transaction hex not created");
-  }
-  if (unsigned_tx->m_metadata == boost::none) 
-  {
-    throw std::runtime_error("No transaction metadata created");
-  }
-  else 
-  {
-    MINFO("Created tx metadata: " << unsigned_tx->m_metadata.get());
-  }
-
-  MINFO("Relaying tx...");
-  //wallet_restored->relay_tx(*unsigned_tx);
-  
-  /*std::string unsigned_tx_hex = unsigned_tx->m_tx_set.get()->m_unsigned_tx_hex.get();
-  MINFO("Created unsigned tx hash: " << unsigned_tx_hex);
-  monero_tx_set signed_tx_set = offline_wallet->sign_txs(unsigned_tx_hex);  
-  std::string signed_tx_hex = signed_tx_set.m_signed_tx_hex.get();
-  MINFO("Create signed tx hash: " << signed_tx_hex);
-  MINFO("Relaying tx...");
-  std::vector<std::string> tx_hashes = wallet_restored->submit_txs(signed_tx_hex);
-  
-  if (tx_hashes.empty()) {
-    MINFO("No tx relayed!");
-  } else {
-    for(std::string tx_hash : tx_hashes) {
-      MINFO("Relayed tx: " << tx_hash);
-    }
-  }
-  /*
-  // query incoming transfers to account 1
-  monero_transfer_query transfer_query;
-  transfer_query.m_is_incoming = true;
-  transfer_query.m_account_index = 0;
-  MINFO("Get transfers");
-  vector<shared_ptr<monero_transfer>> transfers = wallet_restored->get_transfers(transfer_query);
-  monero_utils::free(transfers);
-
-  // query unspent outputs
   monero_output_query output_query;
+  output_query.m_account_index = 0;
+  output_query.m_subaddress_index = 0;
   output_query.m_is_spent = false;
-  MINFO("Get outputs");
-  vector<shared_ptr<monero_output_wallet>> outputs = wallet_restored->get_outputs(output_query);
-  monero_utils::free(outputs);
-  MINFO("close");
-  */
-  // save and close the wallets
-  wallet_restored->close(false);
-  MINFO("after close");
-  delete wallet_restored;
-  MINFO("===== End Light Tests =====");
+
+
+  std::vector<std::shared_ptr<monero_output_wallet>> outputs = wallet_restored->get_outputs(output_query);
+  uint64_t balance = 0;
+  uint64_t unlocked_balance = 0;
+
+  for (auto output : outputs) balance += output->m_amount.get();
+
+  MINFO("GOT " << outputs.size()<< " OUTPUTS FOR BALANCE: " << balance);
+
+  output_query.m_tx_query = std::make_shared<monero_tx_query>();
+  output_query.m_tx_query.get()->m_is_confirmed = true;
+
+  outputs = wallet_restored->get_outputs(output_query);
+
+  for (auto output : outputs) unlocked_balance += output->m_amount.get();
+
+  MINFO("GOT " << outputs.size()<< " OUTPUTS FOR UNLOCKED BALANCE: " << unlocked_balance);
+
+  return 0;
 }
