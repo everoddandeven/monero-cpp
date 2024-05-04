@@ -1395,12 +1395,12 @@ namespace monero {
       // init tx with outgoing transfer from filled values
       std::shared_ptr<monero_tx_wallet> tx = std::make_shared<monero_tx_wallet>();
       txs.push_back(tx);
-      tx->m_hash = *tx_hashes_iter;
+      if (tx_hashes_iter != tx_hashes.end()) tx->m_hash = *tx_hashes_iter; // empty if multisig
       tx->m_key = *tx_keys_iter;
       tx->m_fee = *tx_fees_iter;
       tx->m_weight = *tx_weights_iter;
-      tx->m_full_hex = *tx_blobs_iter;
-      tx->m_metadata = *tx_metadatas_iter;
+      if (tx_blobs_iter != tx_blobs.end()) tx->m_full_hex = *tx_blobs_iter;
+      if (tx_metadatas_iter != tx_metadatas.end()) tx->m_metadata = *tx_metadatas_iter;
       std::shared_ptr<monero_outgoing_transfer> out_transfer = std::make_shared<monero_outgoing_transfer>();
       tx->m_outgoing_transfer = out_transfer;
       out_transfer->m_amount = *tx_amounts_iter;
@@ -1608,14 +1608,14 @@ namespace monero {
       // init tx with outgoing transfer from filled values
       std::shared_ptr<monero_tx_wallet> tx = std::make_shared<monero_tx_wallet>();
       txs.push_back(tx);
-      tx->m_hash = *tx_hashes_iter;
+      if (tx_hashes_iter != tx_hashes.end()) tx->m_hash = *tx_hashes_iter; // empty if multisig
       tx->m_is_locked = true;
       tx->m_is_outgoing = true;
       tx->m_key = *tx_keys_iter;
       tx->m_fee = *tx_fees_iter;
       tx->m_weight = *tx_weights_iter;
-      tx->m_full_hex = *tx_blobs_iter;
-      tx->m_metadata = *tx_metadatas_iter;
+      if (tx_blobs_iter != tx_blobs.end()) tx->m_full_hex = *tx_blobs_iter;
+      if (tx_metadatas_iter != tx_metadatas.end()) tx->m_metadata = *tx_metadatas_iter;
       std::shared_ptr<monero_outgoing_transfer> out_transfer = std::make_shared<monero_outgoing_transfer>();
       tx->m_outgoing_transfer = out_transfer;
       out_transfer->m_amount = *tx_amounts_iter;
@@ -1746,13 +1746,13 @@ namespace monero {
       // init tx with outgoing transfer from filled values
       std::shared_ptr<monero_tx_wallet> tx = std::make_shared<monero_tx_wallet>();
       txs.push_back(tx);
-      tx->m_hash = *tx_hashes_iter;
+      if (tx_hashes_iter != tx_hashes.end()) tx->m_hash = *tx_hashes_iter; // empty if multisig
       tx->m_is_outgoing = true;
       tx->m_key = *tx_keys_iter;
       tx->m_fee = *tx_fees_iter;
       tx->m_weight = *tx_weights_iter;
-      tx->m_full_hex = *tx_blobs_iter;
-      tx->m_metadata = *tx_metadatas_iter;
+      if (tx_blobs_iter != tx_blobs.end()) tx->m_full_hex = *tx_blobs_iter;
+      if (tx_metadatas_iter != tx_metadatas.end()) tx->m_metadata = *tx_metadatas_iter;
       std::shared_ptr<monero_outgoing_transfer> out_transfer = std::make_shared<monero_outgoing_transfer>();
       tx->m_outgoing_transfer = out_transfer;
       out_transfer->m_amount = *tx_amounts_iter;
@@ -1854,13 +1854,13 @@ namespace monero {
       // init tx with outgoing transfer from filled values
       std::shared_ptr<monero_tx_wallet> tx = std::make_shared<monero_tx_wallet>();
       txs.push_back(tx);
-      tx->m_hash = *tx_hashes_iter;
+      if (tx_hashes_iter != tx_hashes.end()) tx->m_hash = *tx_hashes_iter; // empty if multisig
       tx->m_is_outgoing = true;
       tx->m_key = *tx_keys_iter;
       tx->m_fee = *tx_fees_iter;
       tx->m_weight = *tx_weights_iter;
-      tx->m_full_hex = *tx_blobs_iter;
-      tx->m_metadata = *tx_metadatas_iter;
+      if (tx_blobs_iter != tx_blobs.end()) tx->m_full_hex = *tx_blobs_iter;
+      if (tx_metadatas_iter != tx_metadatas.end()) tx->m_metadata = *tx_metadatas_iter;
       std::shared_ptr<monero_outgoing_transfer> out_transfer = std::make_shared<monero_outgoing_transfer>();
       tx->m_outgoing_transfer = out_transfer;
       out_transfer->m_amount = *tx_amounts_iter;
@@ -3158,7 +3158,6 @@ namespace monero {
 
       // sync while enabled
       while (m_syncing_enabled) {
-        auto start = std::chrono::system_clock::now();
         try { lock_and_sync(); }
         catch (std::exception const& e) { std::cout << "monero_wallet_full failed to background synchronize: " << e.what() << std::endl; }
         catch (...) { std::cout << "monero_wallet_full failed to background synchronize" << std::endl; }
@@ -3167,8 +3166,7 @@ namespace monero {
         if (m_syncing_enabled) {
           boost::mutex::scoped_lock lock(m_syncing_mutex);
           boost::posix_time::milliseconds wait_for_ms(m_syncing_interval.load());
-          boost::posix_time::milliseconds elapsed_time = boost::posix_time::milliseconds(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start).count());
-          m_sync_cv.timed_wait(lock, elapsed_time > wait_for_ms ? boost::posix_time::milliseconds(0) : wait_for_ms - elapsed_time); // target regular sync period by accounting for sync time
+          m_sync_cv.timed_wait(lock, wait_for_ms);
         }
       }
 
