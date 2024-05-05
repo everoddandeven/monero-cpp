@@ -82,7 +82,6 @@ namespace monero {
   // --------------------------- STATIC WALLET UTILS --------------------------
 
   bool monero_wallet_light::wallet_exists(const std::string& path) {
-    MTRACE("wallet_exists(" << path << ")");
     bool key_file_exists;
     bool wallet_file_exists;
     tools::wallet2::wallet_exists(path, key_file_exists, wallet_file_exists);
@@ -90,7 +89,6 @@ namespace monero {
   }
 
   monero_wallet_light* monero_wallet_light::open_wallet(const std::string& path, const std::string& password, const monero_network_type network_type) {
-    MTRACE("open_wallet(" << path << ", ***, " << network_type << ")");
     monero_wallet_light* wallet = new monero_wallet_light();
     wallet->m_w2 = std::unique_ptr<tools::wallet2>(new tools::wallet2(static_cast<cryptonote::network_type>(network_type), 1, true));
     wallet->m_w2->load(path, password);
@@ -100,7 +98,6 @@ namespace monero {
   }
 
   monero_wallet_light* monero_wallet_light::open_wallet_data(const std::string& password, const monero_network_type network_type, const std::string& keys_data, const std::string& cache_data, const monero_rpc_connection& daemon_connection, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory) {
-    MTRACE("open_wallet_data(...)");
     monero_wallet_light* wallet = new monero_wallet_light();
     if (http_client_factory == nullptr) wallet->m_w2 = std::unique_ptr<tools::wallet2>(new tools::wallet2(static_cast<cryptonote::network_type>(network_type), 1, true));
     else wallet->m_w2 = std::unique_ptr<tools::wallet2>(new tools::wallet2(static_cast<cryptonote::network_type>(network_type), 1, true, std::move(http_client_factory)));
@@ -112,8 +109,6 @@ namespace monero {
   }
 
   monero_wallet_light* monero_wallet_light::create_wallet(const monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory) {
-    MTRACE("create_wallet(config)");
-
     // validate and normalize config
     monero_wallet_config config_normalized = config.copy();
     if (config.m_path == boost::none) config_normalized.m_path = std::string("");
@@ -424,7 +419,7 @@ namespace monero {
       // find and save rings
       m_w2->find_and_save_rings(false);
     } catch (...) {
-      MINFO("Error occurred while wallet2 refresh");
+      MWARNING("Error occurred while wallet2 refresh");
     }
 
     monero_light_get_address_txs_response response = get_address_txs();
@@ -473,6 +468,7 @@ namespace monero {
       output->m_key_image = std::make_shared<monero_key_image>();
       output->m_key_image.get()->m_hex = "0100000000000000000000000000000000000000000000000000000000000000";
       output->m_is_spent = false;
+      output->m_is_frozen = false;
 
       if (!m_w2->watch_only()) {
         output->m_is_spent = m_w2->light_wallet_is_output_spent(light_output.m_public_key.get(), light_output.m_tx_pub_key.get(), light_output.m_index.get());
@@ -485,7 +481,6 @@ namespace monero {
 
       output->m_tx = std::make_shared<monero_tx>();
       output->m_tx->m_block = std::make_shared<monero_block>();
-
       output->m_tx->m_block.get()->m_height = light_output.m_height.get();
       output->m_tx->m_hash = light_output.m_tx_hash;
       output->m_tx->m_key = light_output.m_tx_pub_key;
@@ -720,7 +715,6 @@ namespace monero {
   }
 
   monero_sync_result monero_wallet_light::lock_and_sync(boost::optional<uint64_t> start_height) {
-    MINFO("monero_wallet_light::lock_and_sync()");
     bool rescan = m_rescan_on_sync.exchange(false);
     boost::lock_guard<boost::recursive_mutex> guarg(m_sync_mutex); // synchronize sync() and syncAsync()
     monero_sync_result result;
@@ -759,7 +753,6 @@ namespace monero {
     for(monero_account account : get_accounts(true, std::string(""))) {
       uint64_t account_balance = account.m_balance.get();
       total_balance += account_balance;
-      MDEBUG("get_balance(): got account " << account.m_index.get() << ", balance: " << account.m_balance.get() << ", total: " << total_balance);
     }
     
     return total_balance;
@@ -802,7 +795,6 @@ namespace monero {
 
     for(monero_account account : get_accounts(true, std::string(""))) {
       total_balance += account.m_unlocked_balance.get();
-      MDEBUG("get_unlocked_balance(): got account " << account.m_index.get() << ", balance: " << account.m_unlocked_balance.get() << ", total: " << total_balance);
     }
     
     return total_balance;
@@ -818,7 +810,6 @@ namespace monero {
       account_balance += get_unlocked_balance(account_idx, subaddress.m_index.get());
     }
     
-    MDEBUG("get unlocked account " << account_idx <<" balance: " << account_balance);
     return account_balance;
   }
 
@@ -875,7 +866,6 @@ namespace monero {
     std::vector<monero_account> accounts = get_accounts(false, std::string(""));
 
     while (account.m_index.get() < accounts.size()) {
-      MDEBUG("Created account " << account.m_index.get() << " is already upsert, creating another one...");
       account = monero_wallet_full::create_account(label);
     }
 
@@ -930,7 +920,6 @@ namespace monero {
     uint32_t subaddr_idx = subaddress.m_index.get();
     
     while(is_address_upsert(account_idx, subaddr_idx)) {
-      MDEBUG("Subbaddress " << subaddress.m_address.get() << " already upsert, creating another one...");
       subaddress = monero_wallet_full::create_subaddress(account_idx, label);
       subaddr_idx = subaddress.m_index.get();
     }
@@ -1223,7 +1212,7 @@ namespace monero {
     // import key images
     uint64_t spent = 0, unspent = 0;
     m_w2->light_wallet_get_unspent_outs();
-    uint64_t height = m_w2->import_key_images(ski, 0, spent, unspent, false); // TODO: use offset? refer to wallet_rpc_server::on_import_key_images() req.offset
+    uint64_t height = m_w2->import_key_images(ski, 0, spent, unspent, true); // TODO: use offset? refer to wallet_rpc_server::on_import_key_images() req.offset
     //uint64_t height = 0;
     // to do
     // translate results
@@ -1259,11 +1248,9 @@ namespace monero {
     std::vector<cryptonote::tx_destination_entry> dsts;
     std::vector<uint8_t> extra;
     epee::json_rpc::error err;
-    MTRACE("monero_wallet_light::create_txs before validate transfer");
     if (!monero_utils::validate_transfer(m_w2.get(), tr_destinations, payment_id, dsts, extra, true, err)) {
       throw std::runtime_error(err.message);
     }
-    MTRACE("monero_wallet_light::create_txs after validate transfer");
 
     // prepare parameters for wallet2's create_transactions_2()
     uint64_t mixin = m_w2->adjust_mixin(0); // get mixin for call to 'create_transactions_2'
@@ -1276,9 +1263,7 @@ namespace monero {
     for (const uint32_t& subtract_fee_from_idx : config.m_subtract_fee_from) subtract_fee_from.insert(subtract_fee_from_idx);
     m_w2->set_light_wallet(true);
     // prepare transactions
-    MTRACE("monero_wallet_light::create_txs before create transactions 2");
     std::vector<wallet2::pending_tx> ptx_vector = m_w2->create_transactions_2(dsts, mixin, unlock_time, priority, extra, account_index, subaddress_indices, subtract_fee_from);
-    MTRACE("monero_wallet_light::create_txs after create transactions 2");
     if (ptx_vector.empty()) throw std::runtime_error("No transaction created");
 
     // check if request cannot be fulfilled due to splitting
@@ -1309,11 +1294,9 @@ namespace monero {
     std::list<std::string> tx_blobs;
     std::list<std::string> tx_metadatas;
     std::list<monero_utils::key_image_list> input_key_images_list;
-    MTRACE("monero_wallet_light::create_txs before fill response");
     if (!monero_utils::fill_response(m_w2.get(), ptx_vector, get_tx_keys, tx_keys, tx_amounts, tx_amounts_by_dest, tx_fees, tx_weights, multisig_tx_hex, unsigned_tx_hex, !relay, tx_hashes, get_tx_hex, tx_blobs, get_tx_metadata, tx_metadatas, input_key_images_list, err)) {
       throw std::runtime_error("need to handle error filling response!");  // TODO
     }
-    MTRACE("monero_wallet_light::create_txs after fill response");
     // build sent txs from results  // TODO: break this into separate utility function
     std::vector<std::shared_ptr<monero_tx_wallet>> txs;
     auto tx_hashes_iter = tx_hashes.begin();
@@ -1429,9 +1412,14 @@ namespace monero {
   }
 
   void monero_wallet_light::close(bool save) {
-    MTRACE("monero_wallet_light::close()");
-    stop_syncing();
     if (save) this->save();
+    
+    if (m_sync_loop_running) {
+      m_sync_cv.notify_one();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));  // TODO: in emscripten, m_sync_cv.notify_one() returns without waiting, so sleep; bug in emscripten upstream llvm?
+      m_syncing_thread.join();
+    }
+    
     if (m_http_client != nullptr && m_http_client->is_connected()) {
       m_http_client->disconnect();
       epee::net_utils::http::abstract_http_client *release_client = m_http_client.release();
@@ -1457,7 +1445,7 @@ namespace monero {
     m_w2->stop();
     m_w2->deinit();
     m_w2->callback(nullptr);
-
+    m_w2_listener.reset();
     // no pointers to destroy
   }
 
@@ -1770,8 +1758,6 @@ namespace monero {
     rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
     req.Accept(writer);
     std::string body = sb.GetString();
-    MDEBUG("upsert subaddrs request body:");
-    MDEBUG("" << body);
     const epee::net_utils::http::http_response_info *response = post("/upsert_subaddrs", body);
     int status_code = response->m_response_code;
 
