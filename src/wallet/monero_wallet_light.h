@@ -156,10 +156,9 @@ namespace monero {
     monero_account create_account(const std::string& label) override;
     monero_subaddress create_subaddress(const uint32_t account_idx, const std::string& label) override;
 
-    std::vector<std::shared_ptr<monero_tx_wallet>> get_txs() const override;
-    std::vector<std::shared_ptr<monero_tx_wallet>> get_txs(const monero_tx_query& query) const override;
+    //std::vector<std::shared_ptr<monero_tx_wallet>> get_txs(const monero_tx_query& query) const override;
     
-    std::vector<std::shared_ptr<monero_transfer>> get_transfers(const monero_transfer_query& query) const override;
+    //std::vector<std::shared_ptr<monero_transfer>> get_transfers(const monero_transfer_query& query) const override;
     
     std::vector<std::shared_ptr<monero_output_wallet>> get_outputs() const;
     std::vector<std::shared_ptr<monero_output_wallet>> get_outputs(const monero_output_query& query) const override;

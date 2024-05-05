@@ -939,11 +939,7 @@ namespace monero {
 
     return subaddress;
   }
-
-  std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs()  const {
-    return get_txs(monero_tx_query());
-  }
-
+/*
   std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(const monero_tx_query& query) const {
     std::vector<std::shared_ptr<monero_tx_wallet>> txs = std::vector<std::shared_ptr<monero_tx_wallet>>();
 
@@ -1061,6 +1057,7 @@ namespace monero {
 
     return txs;
   }
+  */
 
   /**
    * Get incoming and outgoing transfers to and from this wallet.  An outgoing
@@ -1078,6 +1075,8 @@ namespace monero {
    * @param query filters query results (optional)
    * @return wallet transfers per the query (free memory using monero_utils::free)
    */
+  
+  /*
   std::vector<std::shared_ptr<monero_transfer>> monero_wallet_light::get_transfers(const monero_transfer_query& query) const {
     std::vector<std::shared_ptr<monero_transfer>> transfers = std::vector<std::shared_ptr<monero_transfer>>();
 
@@ -1117,6 +1116,11 @@ namespace monero {
       transfer->m_tx->m_is_confirmed = num_confirmations > 0;
       transfer->m_tx->m_fee = monero_utils::uint64_t_cast(light_tx.m_fee.get());
       transfer->m_tx->m_is_failed = false;
+      transfer->m_tx->m_relay = true;
+      transfer->m_tx->m_is_locked = false;
+      transfer->m_tx->m_is_double_spend_seen = false;
+      transfer->m_tx->m_in_tx_pool = false;
+      
 
       transfer->m_tx->m_outputs = std::vector<std::shared_ptr<monero::monero_output>>();
 
@@ -1149,6 +1153,8 @@ namespace monero {
 
     return transfers;
   }
+
+  */
 
   std::vector<std::shared_ptr<monero_output_wallet>> monero_wallet_light::get_outputs() const {  
     return get_outputs(monero_output_query());

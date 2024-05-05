@@ -112,7 +112,21 @@ void test_view_only_and_offline_wallets(monero_wallet* view_only_wallet, monero_
   if (TEST_RELAYS) {
     auto tx_hashes = view_only_wallet->submit_txs(signed_tx_set.m_signed_tx_hex.get());
     if (tx_hashes.size() != 1) throw std::runtime_error("No transaction relayed");
+    monero_tx_query tx_query;
+    
+    tx_query.m_hash = tx_hashes[0];
 
+    auto txs = view_only_wallet->get_txs(tx_query);
+
+    if (txs.empty()) {
+      MERROR("txs are empty!");
+
+      tx_query.m_hash = boost::none;
+      tx_query.m_is_locked = true;
+
+      txs = view_only_wallet->get_txs(tx_query);
+      MERROR("tx are still empty");
+    }
   }
 }
 
@@ -228,6 +242,8 @@ int main(int argc, const char* argv[]) {
 
   MINFO("View only: " << view_only);
   test_view_only_and_offline_wallets(wallet_view_only, offline_wallet);
+  MDEBUG("View only and offline test successfull");
+
   wallet_view_only->close(true);
   return 0;
 }

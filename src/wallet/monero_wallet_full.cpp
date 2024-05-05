@@ -2974,7 +2974,7 @@ namespace monero {
 
       // update pool state TODO monero-project: this should be encapsulated in wallet when unconfirmed transfers queried
       std::vector<std::tuple<cryptonote::transaction, crypto::hash, bool>> process_txs;
-      m_w2->update_pool_state(process_txs);
+      if(!m_w2->light_wallet()) m_w2->update_pool_state(process_txs);
       if (!process_txs.empty()) m_w2->process_pool_state(process_txs);
 
       std::list<std::pair<crypto::hash, tools::wallet2::pool_payment_details>> payments;
