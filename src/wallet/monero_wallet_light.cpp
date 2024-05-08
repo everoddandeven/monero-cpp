@@ -104,6 +104,7 @@ namespace monero {
     wallet->m_w2->load("", password, keys_data, cache_data);
     wallet->m_w2->init("");
     wallet->set_daemon_connection(daemon_connection);
+
     wallet->init_common();
     return wallet;
   }
@@ -163,7 +164,15 @@ namespace monero {
     else wallet->m_w2 = std::unique_ptr<tools::wallet2>(new tools::wallet2(static_cast<cryptonote::network_type>(config.m_network_type.get()), 1, true, std::move(http_client_factory)));
     wallet->set_daemon_connection(config.m_server);
     wallet->m_w2->set_seed_language(language);
-    if (config.m_account_lookahead != boost::none) wallet->m_w2->set_subaddress_lookahead(config.m_account_lookahead.get(), config.m_subaddress_lookahead.get());
+    if (config.m_account_lookahead != boost::none) {
+      wallet->m_w2->set_subaddress_lookahead(config.m_account_lookahead.get(), config.m_subaddress_lookahead.get());
+      cryptonote::subaddress_index si;
+      si.major = config.m_account_lookahead.get();
+      si.minor = config.m_subaddress_lookahead.get();
+      wallet->m_w2->expand_subaddresses(si);
+      wallet->m_account_lookahead = config.m_account_lookahead.get();
+      wallet->m_subaddress_lookahead = config.m_subaddress_lookahead.get();
+    }
 
     // generate wallet
     if (config.m_is_multisig.get()) {
@@ -252,7 +261,15 @@ namespace monero {
     monero_wallet_light* wallet = new monero_wallet_light();
     if (http_client_factory == nullptr) wallet->m_w2 = std::unique_ptr<tools::wallet2>(new tools::wallet2(static_cast<cryptonote::network_type>(config.m_network_type.get()), 1, true));
     else wallet->m_w2 = std::unique_ptr<tools::wallet2>(new tools::wallet2(static_cast<cryptonote::network_type>(config.m_network_type.get()), 1, true, std::move(http_client_factory)));
-    if (config.m_account_lookahead != boost::none) wallet->m_w2->set_subaddress_lookahead(config.m_account_lookahead.get(), config.m_subaddress_lookahead.get());
+    if (config.m_account_lookahead != boost::none) {
+      wallet->m_w2->set_subaddress_lookahead(config.m_account_lookahead.get(), config.m_subaddress_lookahead.get());
+      cryptonote::subaddress_index si;
+      si.major = config.m_account_lookahead.get();
+      si.minor = config.m_subaddress_lookahead.get();
+      wallet->m_w2->expand_subaddresses(si);
+      wallet->m_account_lookahead = config.m_account_lookahead.get();
+      wallet->m_subaddress_lookahead = config.m_subaddress_lookahead.get();
+    }
     if (has_spend_key && has_view_key) wallet->m_w2->generate(config.m_path.get(), config.m_password.get(), address_info.address, spend_key_sk, view_key_sk);
     else if (has_spend_key) wallet->m_w2->generate(config.m_path.get(), config.m_password.get(), spend_key_sk, true, false);
     else wallet->m_w2->generate(config.m_path.get(), config.m_password.get(), address_info.address, view_key_sk);
@@ -279,8 +296,17 @@ namespace monero {
     wallet->set_daemon_connection(config.m_server);
     wallet->m_w2->set_seed_language(config.m_language.get());
     crypto::secret_key secret_key;
-    if (config.m_account_lookahead != boost::none) wallet->m_w2->set_subaddress_lookahead(config.m_account_lookahead.get(), config.m_subaddress_lookahead.get());
+    if (config.m_account_lookahead != boost::none) {
+      wallet->m_w2->set_subaddress_lookahead(config.m_account_lookahead.get(), config.m_subaddress_lookahead.get());
+      cryptonote::subaddress_index si;
+      si.major = config.m_account_lookahead.get();
+      si.minor = config.m_subaddress_lookahead.get();
+      wallet->m_w2->expand_subaddresses(si);
+      wallet->m_account_lookahead = config.m_account_lookahead.get();
+      wallet->m_subaddress_lookahead = config.m_subaddress_lookahead.get();
+    }
     wallet->m_w2->generate(config.m_path.get(), config.m_password.get(), secret_key, false, false);
+    wallet->m_start_height = wallet->m_w2->get_refresh_from_block_height();
     wallet->init_common();
     if (wallet->is_connected_to_daemon()) {
       uint64_t daemon_height = wallet->get_daemon_height();
@@ -299,23 +325,62 @@ namespace monero {
   }
 
   void monero_wallet_light::set_daemon_connection(const boost::optional<monero_rpc_connection>& connection) {
-    if (connection == boost::none) {
-      set_daemon_connection("");
-      return;
-    }
-
-    m_lws_uri = connection.get().m_uri.get();
-
-    if (m_http_client != nullptr && m_lws_uri != std::string("")) {
-      if (m_http_client->is_connected()) m_http_client->disconnect();
-
-      if (!m_http_client->set_server(m_lws_uri, boost::none)) throw std::runtime_error("Could not server: " + m_lws_uri);
-      if (!m_http_client->connect(m_timeout)) throw std::runtime_error("Could not connect to server: " + m_lws_uri);
-
-      m_w2->set_daemon(m_lws_uri);
-    }
+    if (connection == boost::none) set_daemon_connection("");
+    else set_daemon_connection(connection->m_uri == boost::none ? "" : connection->m_uri.get(), connection->m_username == boost::none ? "" : connection->m_username.get(), connection->m_password == boost::none ? "" : connection->m_password.get());
   }
 
+  void monero_wallet_light::set_daemon_connection(const std::string& uri, const std::string& username, const std::string& password) {
+    MTRACE("set_daemon_connection(" << uri << ", " << username << ", " << "***" << ")");
+
+    // prepare uri, login, and is_trusted for wallet2
+    boost::optional<epee::net_utils::http::login> login{};
+    login.emplace(username, password);
+    bool is_trusted = true;
+    
+    // TODO: is_local_address() uses common/util which requires libunbound
+//    bool is_trusted = false;
+//    try { is_trusted = tools::is_local_address(uri); }  // wallet is trusted iff local
+//    catch (const exception &e) { }
+
+    // detect ssl TODO: wallet2 does not detect ssl from uri
+    epee::net_utils::ssl_support_t ssl = uri.rfind("https", 0) == 0 ? epee::net_utils::ssl_support_t::e_ssl_support_enabled : epee::net_utils::ssl_support_t::e_ssl_support_disabled;
+
+    // init wallet2 and set daemon connection
+    if (!m_w2->init(uri, login, {}, 0, is_trusted, ssl)) throw std::runtime_error("Failed to initialize wallet with daemon connection");
+    m_lws_uri = uri;
+    if (m_http_client != nullptr && m_http_client->is_connected()) m_http_client->disconnect();
+    if (m_http_client != nullptr && m_lws_uri != std::string("")) {
+      try {
+        if (!m_http_client->set_server(m_lws_uri, boost::none)) throw std::runtime_error("Could not server: " + m_lws_uri);
+        if (!m_http_client->connect(m_timeout)) throw std::runtime_error("Could not connect to server: " + m_lws_uri);
+
+        //m_w2->set_daemon(m_lws_uri);
+        m_is_connected = true;
+        this->login();
+        try {
+          monero_light_subaddrs subaddrs;
+
+          for(uint32_t current_account = 0; current_account <= m_account_lookahead; current_account++) {
+            std::vector<monero_light_index_range> index_ranges;
+            monero_light_index_range index_range(0, m_subaddress_lookahead);
+            subaddrs.emplace(current_account, index_ranges);
+          }
+
+          upsert_subaddrs(subaddrs);
+        } catch (...) {
+          MWARNING("set_daemon_connection(): Could not upsert subaddresses");
+        }
+      }
+      catch(...) {
+        m_is_connected = false;
+      }
+    } 
+    else 
+    {
+      m_is_connected = false;   
+    }
+  }
+  /*
   void monero_wallet_light::set_daemon_connection(std::string host, std::string port, std::string admin_uri, std::string admin_port, std::string token) {
     m_host = host;
     m_port = port;
@@ -334,12 +399,14 @@ namespace monero {
       m_w2->set_daemon(m_lws_uri);
     }
   }
+  */
 
   boost::optional<monero_rpc_connection> monero_wallet_light::get_daemon_connection() const {
     MTRACE("monero_wallet_light::get_daemon_connection()");
-    if (m_w2->get_daemon_address().empty()) return boost::none;
+    if (m_w2->get_daemon_address().empty() && m_lws_uri.empty()) return boost::none;
     boost::optional<monero_rpc_connection> connection = monero_rpc_connection();
     connection->m_uri = m_w2->get_daemon_address();
+    if (connection->m_uri.get().empty()) connection->m_uri = m_lws_uri;
     if (m_w2->get_daemon_login()) {
       if (!m_w2->get_daemon_login()->username.empty()) connection->m_username = m_w2->get_daemon_login()->username;
       epee::wipeable_string wipeablePassword = m_w2->get_daemon_login()->password;
@@ -353,6 +420,7 @@ namespace monero {
     if (m_http_client == nullptr) throw std::runtime_error("Cannot set daemon proxy");
     m_http_client->set_proxy(uri);
     m_http_admin_client->set_proxy(uri);
+    m_w2->set_proxy(uri);
   }
 
   bool monero_wallet_light::is_connected_to_daemon() const {
@@ -385,6 +453,15 @@ namespace monero {
 
     return address_info.m_blockchain_height.get() == address_info.m_scanned_height.get();
   }
+
+  uint64_t monero_wallet_light::get_daemon_height() const { 
+    if (!is_connected_to_daemon()) return false;
+    
+    monero_light_get_address_info_response address_info = get_address_info();
+
+    return address_info.m_blockchain_height.get() + 1;
+  };
+
 
   void monero_wallet_light::set_restore_height(uint64_t restore_height) {
     monero_wallet_full::set_restore_height(restore_height);
@@ -423,7 +500,7 @@ namespace monero {
     }
 
     monero_light_get_address_txs_response response = get_address_txs();
-    m_start_height = response.m_start_height.get();
+    m_start_height = response.m_start_height.get() + 1;
 
     uint64_t old_scanned_height = m_scanned_block_height;
     
@@ -746,7 +823,7 @@ namespace monero {
       if (import_fee > 0) throw std::runtime_error("Current light wallet server requires a payment to rescan the blockchain.");
     }
   }
-
+  /*
   uint64_t monero_wallet_light::get_balance() const {
     uint64_t total_balance = 0;
 
@@ -833,7 +910,7 @@ namespace monero {
     
     return balance;
   };
-
+  */
   monero_account monero_wallet_light::get_account(uint32_t account_idx, bool include_subaddresses) const {
     // need transfers to inform if subaddresses used
     std::vector<tools::wallet2::transfer_details> transfers;
@@ -1156,10 +1233,7 @@ namespace monero {
 
   */
 
-  std::vector<std::shared_ptr<monero_output_wallet>> monero_wallet_light::get_outputs() const {  
-    return get_outputs(monero_output_query());
-  }
-
+ /*
   std::vector<std::shared_ptr<monero_output_wallet>> monero_wallet_light::get_outputs(const monero_output_query& query) const {
     std::vector<std::shared_ptr<monero_output_wallet>> outputs = std::vector<std::shared_ptr<monero_output_wallet>>();
     
@@ -1176,8 +1250,9 @@ namespace monero {
 
     return outputs;
   }
-
+  */
   std::string monero_wallet_light::export_outputs(bool all) const {
+    boost::lock_guard<boost::recursive_mutex> guarg(m_sync_mutex);
     m_w2->light_wallet_get_address_txs();
     m_w2->light_wallet_get_unspent_outs();
     return epee::string_tools::buff_to_hex_nodelimer(m_w2->export_outputs_to_str(all));
@@ -1236,7 +1311,6 @@ namespace monero {
     // validate config
     if (config.m_relay != boost::none && config.m_relay.get() && is_view_only()) throw std::runtime_error("Cannot relay tx in view wallet");
     if (config.m_account_index == boost::none) throw std::runtime_error("Must specify account index to send from");
-    if (config.m_account_index.get() != 0) throw std::runtime_error("Must specify exactly account index 0 to send from");
 
     // prepare parameters for wallet rpc's validate_transfer()
     std::string payment_id = config.m_payment_id == boost::none ? std::string("") : config.m_payment_id.get();
@@ -1395,7 +1469,7 @@ namespace monero {
   }
 
   uint64_t monero_wallet_light::wait_for_next_block() {
-    uint64_t last_block = get_daemon_height();
+    uint64_t last_block = m_blockchain_height;
     
     while(true) {
       if (m_syncing_enabled) {
@@ -1404,7 +1478,7 @@ namespace monero {
         sync();
       }
       
-      uint64_t current_block = get_daemon_height();
+      uint64_t current_block = m_blockchain_height;
 
       if (current_block > last_block) {
         last_block = current_block;
@@ -1418,13 +1492,7 @@ namespace monero {
   }
 
   void monero_wallet_light::close(bool save) {
-    if (save) this->save();
-    
-    if (m_sync_loop_running) {
-      m_sync_cv.notify_one();
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));  // TODO: in emscripten, m_sync_cv.notify_one() returns without waiting, so sleep; bug in emscripten upstream llvm?
-      m_syncing_thread.join();
-    }
+    monero_wallet_full::close(save);
     
     if (m_http_client != nullptr && m_http_client->is_connected()) {
       m_http_client->disconnect();
@@ -1447,11 +1515,6 @@ namespace monero {
       epee::net_utils::http::abstract_http_client *release_admin_client = m_http_admin_client.release();
       delete release_admin_client;
     }
-
-    m_w2->stop();
-    m_w2->deinit();
-    m_w2->callback(nullptr);
-    m_w2_listener.reset();
     // no pointers to destroy
   }
 
@@ -1460,8 +1523,6 @@ namespace monero {
   void monero_wallet_light::init_common() {
     monero_wallet_full::init_common();
     m_w2->set_light_wallet(true);
-    //wallet2_listener *default_listener = new wallet2_listener(*this, *m_w2);
-    //m_w2->callback(default_listener);
 
     m_request_pending = false;
     m_request_accepted = false;
@@ -1547,7 +1608,8 @@ namespace monero {
 
   const epee::net_utils::http::http_response_info* monero_wallet_light::post(std::string method, std::string &body, bool admin) const {
     const epee::net_utils::http::http_response_info *response = nullptr;
-    
+    boost::lock_guard<boost::recursive_mutex> guarg(m_daemon_mutex);
+
     if (admin) {
       if (m_http_admin_client == nullptr || m_admin_uri == "") {
         throw std::runtime_error("Must set admin lws address before calling admin methods");
@@ -1557,6 +1619,7 @@ namespace monero {
       }    
     }
     else {
+      if(m_http_client == nullptr) throw std::runtime_error("Http client not set");
       if (!m_http_client->invoke_post(method, body, m_timeout, &response)) {
         throw std::runtime_error("Network error");
       }

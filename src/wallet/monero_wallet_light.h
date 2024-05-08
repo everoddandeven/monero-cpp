@@ -123,8 +123,8 @@ namespace monero {
     /**
      * Supported wallet methods.
      */
+    void set_daemon_connection(const std::string& uri, const std::string& username = "", const std::string& password = "") override;
     void set_daemon_connection(const boost::optional<monero_rpc_connection>& connection) override;
-    void set_daemon_connection(std::string host, std::string port = "", std::string admin_uri = "", std::string admin_port = "", std::string token = "");
     void set_daemon_proxy(const std::string& uri = "") override;
     boost::optional<monero_rpc_connection> get_daemon_connection() const override;
     bool is_connected_to_daemon() const override;
@@ -136,21 +136,21 @@ namespace monero {
     uint64_t get_height() const override { return m_scanned_block_height + 1; };
     uint64_t get_restore_height() const override { return m_start_height; };
     void set_restore_height(uint64_t restore_height) override;
-    uint64_t get_daemon_height() const override { return m_blockchain_height == 0 ? 0 : m_blockchain_height + 1 ; };
+    uint64_t get_daemon_height() const override;
     uint64_t get_daemon_max_peer_height() const override { return m_blockchain_height == 0 ? 0 : m_blockchain_height + 1; };
     
     uint64_t get_height_by_date(uint16_t year, uint8_t month, uint8_t day) const override;
 
     void scan_txs(const std::vector<std::string>& tx_hashes) override;
     void rescan_blockchain() override;
-    
+    /*
     uint64_t get_balance() const override;
     uint64_t get_balance(uint32_t account_idx) const override;
     uint64_t get_balance(uint32_t account_idx, uint32_t subaddress_idx) const override;
     uint64_t get_unlocked_balance() const override;
     uint64_t get_unlocked_balance(uint32_t account_idx) const override;
     uint64_t get_unlocked_balance(uint32_t account_idx, uint32_t subaddress_idx) const override;
-
+    */
     std::vector<monero_account> get_accounts(bool include_subaddresses, const std::string& tag) const override;
     monero_account get_account(uint32_t account_idx, bool include_subaddresses) const override;
     monero_account create_account(const std::string& label) override;
@@ -160,17 +160,12 @@ namespace monero {
     
     //std::vector<std::shared_ptr<monero_transfer>> get_transfers(const monero_transfer_query& query) const override;
     
-    std::vector<std::shared_ptr<monero_output_wallet>> get_outputs() const;
-    std::vector<std::shared_ptr<monero_output_wallet>> get_outputs(const monero_output_query& query) const override;
+    //std::vector<std::shared_ptr<monero_output_wallet>> get_outputs(const monero_output_query& query) const override;
     std::string export_outputs(bool all) const override;
 
     std::shared_ptr<monero_key_image_import_result> import_key_images(const std::vector<std::shared_ptr<monero_key_image>>& key_images) override;
 
-    std::vector<std::shared_ptr<monero_tx_wallet>> create_txs(const monero_tx_config& config) override;    
-    
-    std::vector<std::shared_ptr<monero_tx_wallet>> sweep_dust(bool relay = false) override {
-      throw std::runtime_error("sweep_dust() not supported by light wallet");
-    }
+    std::vector<std::shared_ptr<monero_tx_wallet>> create_txs(const monero_tx_config& config) override;
 
     void start_mining(boost::optional<uint64_t> num_threads, boost::optional<bool> background_mining, boost::optional<bool> ignore_battery) override {
       throw std::runtime_error("start_mining() not supported by light wallet");
@@ -265,10 +260,14 @@ namespace monero {
     // store calculated key image for faster lookup
     serializable_unordered_map<crypto::public_key, serializable_map<uint64_t, crypto::key_image> > m_key_image_cache;
     monero_light_subaddrs m_subaddrs;
+    uint32_t m_account_lookahead = 0;
+    uint32_t m_subaddress_lookahead = 0;
 
     // cached monero outputs
     std::vector<std::shared_ptr<monero_output_wallet>> m_outputs;
     std::vector<std::shared_ptr<monero_tx_wallet>> m_relayed_txs;
+
+    mutable boost::recursive_mutex m_daemon_mutex;
 
     void init_common() override;
     void calculate_balances();

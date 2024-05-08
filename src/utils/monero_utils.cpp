@@ -203,7 +203,7 @@ std::shared_ptr<monero_tx_wallet> monero_utils::build_tx_with_outgoing_transfer(
   outgoing_transfer->m_amount = pd.m_amount_in - change - *tx->m_fee;
   
   if (pd.m_subaddr_account != 4294967295) outgoing_transfer->m_account_index = pd.m_subaddr_account;
-  
+  else outgoing_transfer->m_account_index = 2147483647;
   std::vector<uint32_t> subaddress_indices;
   std::vector<std::string> addresses;
   for (uint32_t i: pd.m_subaddr_indices) {
@@ -300,7 +300,8 @@ std::shared_ptr<monero_tx_wallet> monero_utils::build_tx_with_outgoing_transfer_
   tx->m_outgoing_transfer = outgoing_transfer;
   outgoing_transfer->m_amount = pd.m_amount_in - pd.m_change - tx->m_fee.get();
   if (pd.m_subaddr_account != 4294967295) outgoing_transfer->m_account_index = pd.m_subaddr_account;
-  
+  else outgoing_transfer->m_account_index = 2147483647;
+
   std::vector<uint32_t> subaddress_indices;
   std::vector<std::string> addresses;
   for (uint32_t i: pd.m_subaddr_indices) {

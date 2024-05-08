@@ -497,6 +497,7 @@ namespace monero {
   void monero_tx::merge(const std::shared_ptr<monero_tx>& self, const std::shared_ptr<monero_tx>& other) {
     if (this != self.get()) throw std::runtime_error("this != self");
     if (self == other) return;
+    MDEBUG("monero_tx::merge() self: " << self->m_hash.get() << ", other: " << other->m_hash.get());
 
     // merge blocks if they're different
     if (m_block != other->m_block) {
