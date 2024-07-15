@@ -7,10 +7,10 @@
 
 using namespace std;
 
-const std::string DEFAULT_PRIMARY_ADDRESS = "9v2uNhhLQaAfkqGM1fcahU5RspzhVVYsdFbbR6mTg7zsCp2UiA5M5wL4iXMYA2Erbd6xkyrXuSBJJTu4wZ3rkcisQ5zw6xL";
-const std::string DEFAULT_PRIVATE_VIEW_KEY = "0dea177fa6fa4ac7df936326eac26b0eb77c27889ea8ce7e678537231d17ee04";
+const std::string DEFAULT_PRIMARY_ADDRESS = "A19buHUcWkLTq79ExrEhazUCbVdGLeEQqEMMeBMncAEggWaU3h2H68M2Duf4mrZzwainYSWARpjsGgxwykP7XczCMbBHRCC";
+const std::string DEFAULT_PRIVATE_VIEW_KEY = "44468fcffea57b6550cd3fc9c0503e06fa02b1c44fa4c31c79426454df7c1b0d";
 //const std::string DEFAULT_SPEND_KEY = "ca77112364c9b489e42db8d84a0b371de637688636d1bc9ee0278f352cfc250c";
-const std::string DEFAULT_SEED = "razor fever thaw boxes ponies skater wayside winter bevel festival taunts dwarf orange teardrop lagoon axis oxygen flying fuselage vitals slug upon technical tribal skater";
+const std::string DEFAULT_SEED = "gang sunken soya nautical gone woozy pram imitate iceberg wade wives unknown anybody distance cigar fungal outbreak quick goggles voucher simplest suffice jive jive iceberg";
 const std::string LWS_URI = "http://localhost:8443";
 const std::string DAEMON_URI = "http://localhost:28081";
 
@@ -70,7 +70,7 @@ void test_view_only_and_offline_wallets(monero_wallet* view_only_wallet, monero_
     throw std::runtime_error("View only wallet is not connected to daemon");
   }
 
-  view_only_wallet->sync();
+  if(!view_only_wallet->is_synced()) view_only_wallet->sync();
 
   if (view_only_wallet->get_txs().empty()) {
     throw std::runtime_error("View only wallet has no txs");
@@ -134,34 +134,6 @@ void test_view_only_and_offline_wallets(monero_wallet* view_only_wallet, monero_
   }
 }
 
-/*
-  protected void testViewOnlyAndOfflineWallets(MoneroWallet viewOnlyWallet, MoneroWallet offlineWallet) {
-    
-    // create unsigned tx using view-only wallet
-    MoneroTxWallet unsignedTx = viewOnlyWallet.createTx(new MoneroTxConfig()
-    .setAccountIndex(0).setAddress(primaryAddress).setAmount(TestUtils.MAX_FEE.multiply(new BigInteger("3"))));
-    assertNotNull(unsignedTx.getTxSet().getUnsignedTxHex());
-    
-    // sign tx using offline wallet
-    MoneroTxSet signedTxSet = offlineWallet.signTxs(unsignedTx.getTxSet().getUnsignedTxHex());
-    assertFalse(signedTxSet.getSignedTxHex().isEmpty());
-    assertEquals(1, signedTxSet.getTxs().size());
-    assertFalse(signedTxSet.getTxs().get(0).getHash().isEmpty());
-    
-    // parse or "describe" unsigned tx set
-    MoneroTxSet describedTxSet = offlineWallet.describeUnsignedTxSet(unsignedTx.getTxSet().getUnsignedTxHex());
-    testDescribedTxSet(describedTxSet);
-    
-    // submit signed tx using view-only wallet
-    if (TEST_RELAYS) {
-      List<String> txHashes = viewOnlyWallet.submitTxs(signedTxSet.getSignedTxHex());
-      assertEquals(1, txHashes.size());
-      assertEquals(64, txHashes.get(0).length());
-      TestUtils.WALLET_TX_TRACKER.waitForWalletTxsToClearPool(viewOnlyWallet); // wait for confirmation for other tests
-    }
-  }
-*/
-
 monero_rpc_connection create_connection() {
   return monero_rpc_connection(LWS_URI, "superuser", "abctesting123");
 }
@@ -175,11 +147,11 @@ monero_wallet_config create_base_wallet_config() {
   config.m_network_type = monero_network_type::TESTNET;
   config.m_server = create_connection();
   config.m_seed_offset = "";
-  config.m_restore_height = 2338081;
+  config.m_restore_height = 2537000;
   config.m_path = "MyLightWalletRestored";
   config.m_password = "supersecretpassword123";
-  config.m_account_lookahead = 6;
-  config.m_subaddress_lookahead = 10;
+  config.m_account_lookahead = 1;
+  config.m_subaddress_lookahead = 11;
 
   return config;
 }
@@ -219,8 +191,10 @@ monero_wallet_config create_offline_config() {
 monero_wallet_config create_full_config() {
   monero_wallet_config config = create_offline_config();
   config.m_server = create_connection_full();
-  config.m_restore_height = 2338080;
+  config.m_restore_height = 2537000;
   config.m_path = "MyFullWalletRestored";
+  config.m_account_lookahead = 11;
+  config.m_subaddress_lookahead = 11;
   return config;
 }
 
@@ -247,64 +221,84 @@ int main(int argc, const char* argv[]) {
   monero_wallet* wallet_view_only = monero_wallet_light::create_wallet(view_only_config);
   monero_wallet* offline_wallet = monero_wallet_full::create_wallet(offline_config);
   monero_wallet* full_wallet = monero_wallet_full::create_wallet(create_full_config());
-  MINFO("===== Syncing wallet full... =====");
+  MINFO("===== Syncing full wallet ... =====");
   full_wallet->sync();
-  MINFO("===== Wallet full synced =====");
+  
+  if (!full_wallet->is_synced()) {
+    MERROR("===== Full wallet not synced =====");
+    return 0;
+  }
+  
+  MINFO("Full wallet sync end - height: " << full_wallet->get_height() << ", balance: " << full_wallet->get_balance() << ", unlocked balance: " << full_wallet->get_unlocked_balance() << ", connected: " << full_wallet->is_connected_to_daemon());
+  MINFO("===== Full wallet synced =====");
 
-  MINFO("===== Wallet Light created successfully =====");
-  MINFO("===== Syncing wallet light... =====");
-  // start syncing the wallet continuously in the background
+  MINFO("===== Syncing view only light wallet... =====");
   wallet_view_only->sync();
-  light_wallet->sync();
-  //wallet_restored->start_syncing(10000);
   if (!wallet_view_only->is_synced()) {
-    MERROR("===== Wallet not synced =====");
+    MERROR("===== View only light wallet not synced =====");
     return 0;
   }
 
-  MINFO("===== Wallet synced =====");
-  bool view_only = wallet_view_only->is_view_only();
+  MINFO("View only light wallet sync end - height: " << wallet_view_only->get_height() << ", balance: " << wallet_view_only->get_balance() << ", unlocked balance: " << wallet_view_only->get_unlocked_balance() << ", connected: " << wallet_view_only->is_connected_to_daemon());
+  MINFO("===== View only light wallet synced =====");
 
-  MINFO("View only: " << view_only);
-  //test_view_only_and_offline_wallets(wallet_view_only, offline_wallet);
-  MDEBUG("View only and offline test successfull");
-  uint64_t daemon_height = wallet_view_only->get_daemon_height();
-  MINFO("daemon height: " << daemon_height);
-  MINFO("getting txs");
-  monero_tx_query t_query;
-  t_query.m_is_outgoing = true;
-  auto outgoing_txs = wallet_view_only->get_txs(t_query);
-  MINFO("View only outgoing txs: " << outgoing_txs.size());
-  wallet_view_only->get_transfers();
-  wallet_view_only->close(true);
-
-  outgoing_txs = light_wallet->get_txs(t_query);
-
-  MINFO("Light wallet outgoing txs: " << outgoing_txs.size());
-
-  for (auto out_tx : outgoing_txs) {
-    uint64_t amount = out_tx->m_outgoing_transfer.get()->m_amount.get();
-    std::string hash =  out_tx->m_hash.get();
-    uint64_t fee = out_tx->m_fee.get();
-    MINFO("Got light wallet outgoing tx: " << hash << ", amount: " << amount << ", fee: " << fee);
+  MINFO("===== Syncing light wallet... =====");
+  light_wallet->sync();
+  if (!light_wallet->is_synced()) {
+    MERROR("===== Light wallet not synced =====");
+    return 0;
   }
 
-  outgoing_txs = full_wallet->get_txs(t_query);
+  MINFO("Light wallet sync end - height: " << light_wallet->get_height() << ", balance: " << light_wallet->get_balance() << ", unlocked balance: " << light_wallet->get_unlocked_balance() << ", connected: " << light_wallet->is_connected_to_daemon());
+  MINFO("===== Light wallet synced =====");
+  full_wallet->start_syncing(5000);
+  wallet_view_only->start_syncing(5000);
+  light_wallet->start_syncing(5000);
+  MINFO("===== Getting wallets txs =====");
+  monero_tx_query t_query;
+  t_query.m_is_outgoing = true;
 
-  MINFO("Full wallet outgoing txs: " << outgoing_txs.size());
+  auto outgoing_txs = full_wallet->get_txs(t_query);
+
+  MINFO("===== Full wallet outgoing txs: " << outgoing_txs.size() << " =====");
 
   for (auto out_tx : outgoing_txs) {
     uint64_t amount = out_tx->m_outgoing_transfer.get()->m_amount.get();
     std::string hash =  out_tx->m_hash.get();
     uint64_t fee = out_tx->m_fee.get();
-    MINFO("Got full wallet outgoing tx: " << hash << ", amount: " << amount << ", fee: " << fee);
+    for (auto transfer : out_tx->get_transfers()) {
+      std::string ttype = "unknown";
+
+      if (transfer->is_incoming() && transfer->is_outgoing()) {
+        ttype = "incoming/outgoing";
+      }
+      else if (transfer->is_incoming()) {
+        ttype = "incoming";
+      } else if (transfer->is_outgoing()) {
+        ttype = "outgoing";
+      }
+
+      MINFO("=====> found " << ttype << " transfer: amount: " << transfer->m_amount);
+    }
+    MINFO("===== Got full wallet outgoing tx: " << hash << ", amount: " << amount << ", fee: " << fee << " =====");
+  }
+  
+  outgoing_txs = light_wallet->get_txs(t_query);
+
+  MINFO("===== Light wallet outgoing txs: " << outgoing_txs.size() << " =====");
+
+  for (auto out_tx : outgoing_txs) {
+    uint64_t amount = out_tx->m_outgoing_transfer.get()->m_amount.get();
+    std::string hash =  out_tx->m_hash.get();
+    uint64_t fee = out_tx->m_fee.get();
+    MINFO("===== Got light wallet outgoing tx: " << hash << ", amount: " << amount << ", fee: " << fee << " =====");
   }
 
   monero_tx_query in_query;
   in_query.m_is_incoming = true;
   auto incoming_txs = light_wallet->get_txs(in_query);
 
-  MINFO("Light wallet incoming txs: " << incoming_txs.size());
+  MINFO("===== Light wallet incoming txs: " << incoming_txs.size() << " =====");
 
   for(auto in_tx : incoming_txs) {
     uint64_t amount = 0;
@@ -314,12 +308,12 @@ int main(int argc, const char* argv[]) {
     std::string hash =  in_tx->m_hash.get();
     uint64_t fee = in_tx->m_fee.get();
 
-    MINFO("Got light wallet incoming tx: " << hash << ", amount: " << amount << ", fee: " << fee);
+    MINFO("===== Got light wallet incoming tx: " << hash << ", amount: " << amount << ", fee: " << fee << " =====");
   }
 
   incoming_txs = full_wallet->get_txs(in_query);
 
-  MINFO("Full wallet incoming txs: " << incoming_txs.size());
+  MINFO("===== Full wallet incoming txs: " << incoming_txs.size() << " =====");
 
   for(auto in_tx : incoming_txs) {
     uint64_t amount = 0;
@@ -329,7 +323,7 @@ int main(int argc, const char* argv[]) {
     std::string hash =  in_tx->m_hash.get();
     uint64_t fee = in_tx->m_fee.get();
 
-    MINFO("Got full wallet incoming tx: " << hash << ", amount: " << amount << ", fee: " << fee);
+    MINFO("===== Got full wallet incoming tx: " << hash << ", amount: " << amount << ", fee: " << fee << " =====");
   }
 
   auto outputs = light_wallet->get_outputs(monero_output_query());
@@ -341,46 +335,51 @@ int main(int argc, const char* argv[]) {
     auto index = output->m_index.get();
     auto spent = output->m_is_spent.get();
 
-    MINFO("Got light wallet output public key: " << pub_key << ", index: " << index << ", spent: " << spent);
+    MINFO("===== Got light wallet output public key: " << pub_key << ", index: " << index << ", spent: " << spent << " =====");
   }
 
   outputs = full_wallet->get_outputs(monero_output_query());
 
-  MINFO("Got full wallet outputs: " << outputs.size());
+  MINFO("===== Got full wallet outputs: " << outputs.size() << " =====");
 
   for(auto output : outputs) {
     auto pub_key = output->m_stealth_public_key.get();
     auto index = output->m_index.get();
     auto spent = output->m_is_spent.get();
 
-    MINFO("Got full wallet output public key: " << pub_key << ", index: " << index << ", spent: " << spent);
+    MINFO("===== Got full wallet output public key: " << pub_key << ", index: " << index << ", spent: " << spent << " =====");
   }
 
-  MINFO("Light wallet balance: " << light_wallet->get_balance() << ", Full wallet balance: " << full_wallet->get_balance());
-  MINFO("Light wallet unlocked balance: " << light_wallet->get_unlocked_balance() << ", Full wallet unlocked balance: " << full_wallet->get_unlocked_balance());
+  MINFO("===== Light wallet balance: " << light_wallet->get_balance() << ", Full wallet balance: " << full_wallet->get_balance() << " =====");
+  MINFO("===== Light wallet unlocked balance: " << light_wallet->get_unlocked_balance() << ", Full wallet unlocked balance: " << full_wallet->get_unlocked_balance() << " =====");
 
   light_wallet->get_txs();
   full_wallet->get_txs();
 
   auto transfers = light_wallet->get_transfers();
 
-  MINFO("Got light wallet transfers: " << transfers.size());
+  MINFO("===== Got light wallet transfers: " << transfers.size() << " =====");
 
   for(auto transfer : transfers) {
     auto hash = transfer->m_tx->m_hash.get();
     std::string type = transfer->is_incoming() ? "incoming" : transfer->is_outgoing() ? "outgoing" : "unknown";
-    MINFO("Got light wallet " << type << " transfer hash: " << hash << ", amount: " << transfer->m_amount.get() << ", account index: " << transfer->m_account_index.get());
+    MINFO("===== Got light wallet " << type << " transfer hash: " << hash << ", amount: " << transfer->m_amount.get() << ", account index: " << transfer->m_account_index.get() << " =====");
   }
 
   transfers = full_wallet->get_transfers();
 
-  MINFO("Got full wallet transfers: " << transfers.size());
+  MINFO("===== Got full wallet transfers: " << transfers.size() << " =====");
 
   for(auto transfer : transfers) {
     auto hash = transfer->m_tx->m_hash.get();
     std::string type = transfer->is_incoming() ? "incoming" : transfer->is_outgoing() ? "outgoing" : "unknown";
-    MINFO("Got full wallet " << type << " transfer hash: " << hash << ", amount: " << transfer->m_amount.get() << ", account index: " << transfer->m_account_index.get());
+    MINFO("===== Got full wallet " << type << " transfer hash: " << hash << ", amount: " << transfer->m_amount.get() << ", account index: " << transfer->m_account_index.get() << " =====");
   }
 
+  //test_view_only_and_offline_wallets(wallet_view_only, offline_wallet);
+  auto account = light_wallet->get_account(0);
+
+  MINFO("Account 0 balance: " << account.m_balance.get());
+  MINFO("Full account 0 balance: " << full_wallet->get_account(0).m_balance);
   return 0;
 }

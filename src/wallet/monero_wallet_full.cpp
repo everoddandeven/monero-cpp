@@ -2875,7 +2875,7 @@ namespace monero {
     m_w2->stop();
     m_w2->deinit();
     m_w2->callback(nullptr);  // unregister listener after sync
-    m_w2_listener.reset();    // wait for queued notifications
+    if(m_w2_listener != nullptr) m_w2_listener.reset();    // wait for queued notifications
   }
 
   // ------------------------------- PRIVATE HELPERS ----------------------------

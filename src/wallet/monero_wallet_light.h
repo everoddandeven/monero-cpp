@@ -73,45 +73,18 @@ namespace monero {
 
     // --------------------------- STATIC WALLET UTILS --------------------------
     
-    /**
-     * Indicates if a wallet exists at the given path.
-     *
-     * @param path is the path to check for a wallet
-     * @return true if a wallet exists at the given path, false otherwise
-     */
-    static bool wallet_exists(const std::string& path);
-
-    /**
-     * Open an existing wallet from disk.
-     *
-     * @param path is the path to the wallet file to open
-     * @param password is the password of the wallet file to open
-     * @param network_type is the wallet's network type
-     * @return a pointer to the wallet instance
-     */
     static monero_wallet_light* open_wallet(const std::string& path, const std::string& password, const monero_network_type network_type);
 
-    /**
-     * Open an in-memory wallet from existing data buffers.
-     *
-     * @param password is the password of the wallet file to open
-     * @param network_type is the wallet's network type
-     * @param keys_data contains the contents of the ".keys" file
-     * @param cache_data contains the contents of the wallet cache file (no extension)
-     * @param daemon_connection is connection information to a daemon (default = an unconnected wallet)
-     * @param http_client_factory allows use of custom http clients
-     * @return a pointer to the wallet instance
-     */
     static monero_wallet_light* open_wallet_data(const std::string& password, const monero_network_type, const std::string& keys_data, const std::string& cache_data, const monero_rpc_connection& daemon_connection = monero_rpc_connection(), std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory = nullptr);
 
-    /**
-     * Create a new wallet with the given configuration.
-     *
-     * @param config is the wallet configuration
-     * @param http_client_factory allows use of custom http clients
-     * @return a pointer to the wallet instance
-     */
     static monero_wallet_light* create_wallet(const monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory = nullptr);
+
+    static monero_wallet_light* create_wallet_from_seed(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
+   
+    static monero_wallet_light* create_wallet_from_keys(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
+    
+    static monero_wallet_light* create_wallet_random(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
+    
 
     // ----------------------------- WALLET METHODS -----------------------------
 
@@ -143,24 +116,11 @@ namespace monero {
 
     void scan_txs(const std::vector<std::string>& tx_hashes) override;
     void rescan_blockchain() override;
-    /*
-    uint64_t get_balance() const override;
-    uint64_t get_balance(uint32_t account_idx) const override;
-    uint64_t get_balance(uint32_t account_idx, uint32_t subaddress_idx) const override;
-    uint64_t get_unlocked_balance() const override;
-    uint64_t get_unlocked_balance(uint32_t account_idx) const override;
-    uint64_t get_unlocked_balance(uint32_t account_idx, uint32_t subaddress_idx) const override;
-    */
+
     std::vector<monero_account> get_accounts(bool include_subaddresses, const std::string& tag) const override;
-    monero_account get_account(uint32_t account_idx, bool include_subaddresses) const override;
     monero_account create_account(const std::string& label) override;
     monero_subaddress create_subaddress(const uint32_t account_idx, const std::string& label) override;
 
-    //std::vector<std::shared_ptr<monero_tx_wallet>> get_txs(const monero_tx_query& query) const override;
-    
-    //std::vector<std::shared_ptr<monero_transfer>> get_transfers(const monero_transfer_query& query) const override;
-    
-    //std::vector<std::shared_ptr<monero_output_wallet>> get_outputs(const monero_output_query& query) const override;
     std::string export_outputs(bool all) const override;
 
     std::shared_ptr<monero_key_image_import_result> import_key_images(const std::vector<std::shared_ptr<monero_key_image>>& key_images) override;
@@ -238,65 +198,20 @@ namespace monero {
     uint64_t m_scanned_block_height = 0;
     uint64_t m_blockchain_height = 0;
 
-    uint64_t m_balance = 0;
-    uint64_t m_balance_pending = 0;
-    uint64_t m_balance_unlocked = 0;
-
     uint64_t m_per_byte_fee = 0;
     uint64_t m_fee_mask = 0;
-    
-    std::vector<monero_light_transaction> m_raw_transactions;
-    std::vector<monero_light_transaction> m_transactions;
-    std::vector<monero_light_output> m_unspent_outputs;
-    tools::wallet2::transfer_container m_transfer_container;
-    serializable_unordered_map<crypto::key_image, size_t> m_key_images;
-    serializable_unordered_map<crypto::public_key, size_t> m_pub_keys;
-    std::vector<std::shared_ptr<monero_output_wallet>> m_exported_outputs = std::vector<std::shared_ptr<monero_output_wallet>>();
 
-    std::vector<std::shared_ptr<monero_key_image>> m_imported_key_images = std::vector<std::shared_ptr<monero_key_image>>();
-    std::vector<std::shared_ptr<monero_key_image>> m_exported_key_images = std::vector<std::shared_ptr<monero_key_image>>();
-
-    std::unordered_map<crypto::hash, tools::wallet2::address_tx> m_light_wallet_address_txs;
-    // store calculated key image for faster lookup
-    serializable_unordered_map<crypto::public_key, serializable_map<uint64_t, crypto::key_image> > m_key_image_cache;
     monero_light_subaddrs m_subaddrs;
     uint32_t m_account_lookahead = 0;
     uint32_t m_subaddress_lookahead = 0;
 
-    // cached monero outputs
-    std::vector<std::shared_ptr<monero_output_wallet>> m_outputs;
-    std::vector<std::shared_ptr<monero_tx_wallet>> m_relayed_txs;
-
     mutable boost::recursive_mutex m_daemon_mutex;
 
     void init_common() override;
-    void calculate_balances();
-
-    bool has_imported_key_images() const {
-      return !m_imported_key_images.empty();
-    };
-
-    bool key_image_is_ours(const std::string& key_image, const std::string& tx_public_key, const std::string& out_index, cryptonote::subaddress_index subaddress_index) const;
-    bool key_image_is_ours(const std::string& key_image, const std::string& tx_public_key, uint64_t out_index, cryptonote::subaddress_index subaddress_index) const {
-      crypto::public_key c_tx_public_key;
-      crypto::key_image c_key_image;
-
-      epee::string_tools::hex_to_pod(tx_public_key, c_tx_public_key);
-      epee::string_tools::hex_to_pod(key_image, c_key_image);
-
-      return key_image_is_ours(c_key_image, c_tx_public_key, out_index, subaddress_index);
-    }
-    bool key_image_is_ours(const crypto::key_image& key_image, const crypto::public_key& tx_public_key, uint64_t out_index, cryptonote::subaddress_index subaddress_index) const;
-    bool key_images_are_ours(const std::vector<crypto::key_image> key_images, const std::vector<crypto::public_key> tx_public_keys, const std::vector<uint64_t> out_indices, const std::vector<cryptonote::subaddress_index> subaddress_idxs) const;
-    bool output_is_spent(const monero_light_output spend_output) const;
-    bool spend_object_is_ours(const monero_light_spend spend_object) const;
-    bool spend_objects_are_ours(const std::vector<monero_light_spend> spend_objects) const;
-    bool transaction_is_ours(const monero_light_transaction& tx) const;
-    bool is_output_spent(const monero_light_output output) const;
-    bool is_mined_output(monero_light_output output) const;
-    bool parse_rct_str(const std::string& rct_string, const crypto::public_key& tx_pub_key, uint64_t internal_output_index, rct::key& decrypted_mask, rct::key& rct_commit, bool decrypt) const;
 
     bool daemon_supports_subaddresses() { return m_daemon_supports_subaddresses; };
+
+    std::vector<monero_subaddress> get_subaddresses_aux(uint32_t account_idx, const std::vector<uint32_t>& subaddress_indices, const std::vector<tools::wallet2::transfer_details>& transfers) const override;
 
     monero_sync_result sync_aux(boost::optional<uint64_t> start_height = boost::none) override;
     monero_sync_result lock_and_sync(boost::optional<uint64_t> start_height = boost::none) override;  // internal function to synchronize request to sync and rescan
@@ -586,11 +501,6 @@ namespace monero {
     void rescan(monero_light_rescan_request request) const;
 
     const epee::net_utils::http::http_response_info* post(std::string method, std::string &body, bool admin = false) const;
-
-    static monero_wallet_light* create_wallet_from_seed(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
-    static monero_wallet_light* create_wallet_from_keys(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
-    static monero_wallet_light* create_wallet_random(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
-    std::vector<monero_subaddress> get_subaddresses_aux(uint32_t account_idx, const std::vector<uint32_t>& subaddress_indices, const std::vector<tools::wallet2::transfer_details>& transfers) const override;
 
   };
 }
