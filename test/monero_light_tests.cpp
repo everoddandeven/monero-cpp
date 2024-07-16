@@ -254,6 +254,7 @@ int main(int argc, const char* argv[]) {
   full_wallet->start_syncing(5000);
   wallet_view_only->start_syncing(5000);
   light_wallet->start_syncing(5000);
+  /*
   MINFO("===== Getting wallets txs =====");
   monero_tx_query t_query;
   t_query.m_is_outgoing = true;
@@ -291,6 +292,20 @@ int main(int argc, const char* argv[]) {
     uint64_t amount = out_tx->m_outgoing_transfer.get()->m_amount.get();
     std::string hash =  out_tx->m_hash.get();
     uint64_t fee = out_tx->m_fee.get();
+    for (auto transfer : out_tx->get_transfers()) {
+      std::string ttype = "unknown";
+
+      if (transfer->is_incoming() && transfer->is_outgoing()) {
+        ttype = "incoming/outgoing";
+      }
+      else if (transfer->is_incoming()) {
+        ttype = "incoming";
+      } else if (transfer->is_outgoing()) {
+        ttype = "outgoing";
+      }
+
+      MINFO("=====> found " << ttype << " transfer: amount: " << transfer->m_amount);
+    }
     MINFO("===== Got light wallet outgoing tx: " << hash << ", amount: " << amount << ", fee: " << fee << " =====");
   }
 
@@ -355,14 +370,23 @@ int main(int argc, const char* argv[]) {
 
   light_wallet->get_txs();
   full_wallet->get_txs();
-
+  */
   auto transfers = light_wallet->get_transfers();
 
   MINFO("===== Got light wallet transfers: " << transfers.size() << " =====");
 
   for(auto transfer : transfers) {
     auto hash = transfer->m_tx->m_hash.get();
-    std::string type = transfer->is_incoming() ? "incoming" : transfer->is_outgoing() ? "outgoing" : "unknown";
+    std::string type = "unknown";
+    
+    if (transfer->is_incoming() && transfer->is_outgoing()) {
+      type = "incoming/outgoing";
+    } else if (transfer->is_incoming()) {
+      type = "incoming";
+    } else if (transfer->is_outgoing()) {
+      type = "outgoing";
+    }
+    
     MINFO("===== Got light wallet " << type << " transfer hash: " << hash << ", amount: " << transfer->m_amount.get() << ", account index: " << transfer->m_account_index.get() << " =====");
   }
 
@@ -372,7 +396,16 @@ int main(int argc, const char* argv[]) {
 
   for(auto transfer : transfers) {
     auto hash = transfer->m_tx->m_hash.get();
-    std::string type = transfer->is_incoming() ? "incoming" : transfer->is_outgoing() ? "outgoing" : "unknown";
+    std::string type = "unknown";
+    
+    if (transfer->is_incoming() && transfer->is_outgoing()) {
+      type = "incoming/outgoing";
+    } else if (transfer->is_incoming()) {
+      type = "incoming";
+    } else if (transfer->is_outgoing()) {
+      type = "outgoing";
+    }
+    
     MINFO("===== Got full wallet " << type << " transfer hash: " << hash << ", amount: " << transfer->m_amount.get() << ", account index: " << transfer->m_account_index.get() << " =====");
   }
 
