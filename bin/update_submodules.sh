@@ -7,4 +7,6 @@ git submodule update --init --force --recursive
 cd ./external/monero-project
 git checkout master
 git pull --ff-only origin master
+git checkout light-wallet-maintenance
+git pull
 cd ../../
