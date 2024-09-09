@@ -173,6 +173,9 @@ namespace monero {
 
     void close(bool save = false) override;
 
+  private:
+    void connect_to_lws();
+
   // --------------------------------- PROTECTED ------------------------------------------
 
   protected:
