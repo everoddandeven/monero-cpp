@@ -130,7 +130,7 @@ namespace monero {
 
     // --------------------------------- PRIVATE --------------------------------
 
-  private:
+  protected:
     bool m_is_view_only;
     monero_network_type m_network_type;
     cryptonote::account_base m_account;
@@ -142,6 +142,22 @@ namespace monero {
     std::string m_prv_spend_key;
     std::string m_primary_address;
 
-    void init_common();
+    std::unique_ptr<std::vector<std::string>> m_generated_key_images;
+
+    virtual void init_common();
+    cryptonote::network_type get_nettype() const { return m_network_type == monero_network_type::TESTNET ? cryptonote::network_type::TESTNET : m_network_type == monero_network_type::STAGENET ? cryptonote::network_type::STAGENET : cryptonote::network_type::MAINNET; };
+
+    bool key_on_device() const;
+
+    monero_key_image generate_key_image(const std::string &tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const;
+    monero_key_image generate_key_image(const crypto::public_key& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const;
+    crypto::key_image generate_key_image_for_enote(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr) const;
+    bool key_image_is_ours(crypto::key_image &key_image, const crypto::public_key& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const;
+    bool key_image_is_ours(std::string &key_image, const std::string& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const;
+
+    std::string encrypt(const char *plaintext, size_t len, const crypto::secret_key &skey, bool authenticated = true) const;
+    std::string encrypt(const std::string &plaintext, const crypto::secret_key &skey, bool authenticated = true) const;
+    std::string encrypt_with_private_view_key(const std::string &plaintext, bool authenticated = true) const;
+
   };
 }

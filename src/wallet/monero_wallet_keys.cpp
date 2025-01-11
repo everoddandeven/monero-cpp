@@ -57,6 +57,7 @@
 #include <iostream>
 #include "mnemonics/electrum-words.h"
 #include "mnemonics/english.h"
+#include "common/base58.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "string_tools.h"
@@ -70,6 +71,26 @@ using namespace crypto;
  * Public library interface.
  */
 namespace monero {
+  // Set up an address signature message hash
+  // Hash data: domain separator, spend public key, view public key, mode identifier, payload data
+  static crypto::hash get_message_hash(const std::string &data, const crypto::public_key &spend_key, const crypto::public_key &view_key, const uint8_t mode)
+  {
+    KECCAK_CTX ctx;
+    keccak_init(&ctx);
+    keccak_update(&ctx, (const uint8_t*)config::HASH_KEY_MESSAGE_SIGNING, sizeof(config::HASH_KEY_MESSAGE_SIGNING)); // includes NUL
+    keccak_update(&ctx, (const uint8_t*)&spend_key, sizeof(crypto::public_key));
+    keccak_update(&ctx, (const uint8_t*)&view_key, sizeof(crypto::public_key));
+    keccak_update(&ctx, (const uint8_t*)&mode, sizeof(uint8_t));
+    char len_buf[(sizeof(size_t) * 8 + 6) / 7];
+    char *ptr = len_buf;
+    tools::write_varint(ptr, data.size());
+    CHECK_AND_ASSERT_THROW_MES(ptr > len_buf && ptr <= len_buf + sizeof(len_buf), "Length overflow");
+    keccak_update(&ctx, (const uint8_t*)len_buf, ptr - len_buf);
+    keccak_update(&ctx, (const uint8_t*)data.data(), data.size());
+    crypto::hash hash;
+    keccak_finish(&ctx, (uint8_t*)&hash);
+    return hash;
+  }
 
   // ---------------------------- WALLET MANAGEMENT ---------------------------
 
@@ -223,6 +244,10 @@ namespace monero {
 
   // ----------------------------- WALLET METHODS -----------------------------
 
+  bool monero_wallet_keys::key_on_device() const {
+    return m_account.get_device().get_type() != hw::device::device_type::SOFTWARE;
+  }
+
   monero_wallet_keys::~monero_wallet_keys() {
     MTRACE("~monero_wallet_keys()");
     close();
@@ -293,12 +318,143 @@ namespace monero {
 
   std::string monero_wallet_keys::sign_message(const std::string& msg, monero_message_signature_type signature_type, uint32_t account_idx, uint32_t subaddress_idx) const {
     std::cout << "monero_wallet_keys::sign_message()" << std::endl;
-    throw std::runtime_error("monero_wallet_keys::sign_message() not implemented");
+    
+    cryptonote::subaddress_index index = {account_idx, subaddress_idx};
+
+    const cryptonote::account_keys &keys = m_account.get_keys();
+    crypto::signature signature;
+    crypto::secret_key skey, m;
+    crypto::secret_key skey_spend, skey_view;
+    crypto::public_key pkey;
+    crypto::public_key pkey_spend, pkey_view; // to include both in hash
+    crypto::hash hash;
+    uint8_t mode;
+
+    // Use the base address
+    if (index.is_zero())
+    {
+      switch (signature_type)
+      {
+        case monero_message_signature_type::SIGN_WITH_SPEND_KEY:
+          skey = keys.m_spend_secret_key;
+          pkey = keys.m_account_address.m_spend_public_key;
+          mode = 0;
+          break;
+        case monero_message_signature_type::SIGN_WITH_VIEW_KEY:
+          skey = keys.m_view_secret_key;
+          pkey = keys.m_account_address.m_view_public_key;
+          mode = 1;
+          break;
+        default: throw new std::runtime_error("Invalid signature type requested");
+      }
+      hash = get_message_hash(msg,keys.m_account_address.m_spend_public_key,keys.m_account_address.m_view_public_key,mode);
+    }
+    // Use a subaddress
+    else
+    {
+      skey_spend = keys.m_spend_secret_key;
+      m = m_account.get_device().get_subaddress_secret_key(keys.m_view_secret_key, index);
+      sc_add((unsigned char*)&skey_spend, (unsigned char*)&m, (unsigned char*)&skey_spend);
+      secret_key_to_public_key(skey_spend,pkey_spend);
+      sc_mul((unsigned char*)&skey_view, (unsigned char*)&keys.m_view_secret_key, (unsigned char*)&skey_spend);
+      secret_key_to_public_key(skey_view,pkey_view);
+      switch (signature_type)
+      {
+        case monero_message_signature_type::SIGN_WITH_SPEND_KEY:
+          skey = skey_spend;
+          pkey = pkey_spend;
+          mode = 0;
+          break;
+        case monero_message_signature_type::SIGN_WITH_VIEW_KEY:
+          skey = skey_view;
+          pkey = pkey_view;
+          mode = 1;
+          break;
+        default: CHECK_AND_ASSERT_THROW_MES(false, "Invalid signature type requested");
+      }
+      secret_key_to_public_key(skey, pkey);
+      hash = get_message_hash(msg,pkey_spend,pkey_view,mode);
+    }
+    crypto::generate_signature(hash, pkey, skey, signature);
+    return std::string("SigV2") + tools::base58::encode(std::string((const char *)&signature, sizeof(signature)));
   }
 
   monero_message_signature_result monero_wallet_keys::verify_message(const std::string& msg, const std::string& address, const std::string& signature) const {
     std::cout << "monero_wallet_keys::verify_message()" << std::endl;
-    throw std::runtime_error("monero_wallet_keys::verify_message() not implemented");
+
+    // validate and parse address or url
+    cryptonote::address_parse_info info;
+    std::string err = "Invalid address";
+    if (!get_account_address_from_str_or_url(info, get_nettype(), address,
+      [&err](const std::string &url, const std::vector<std::string> &addresses, bool dnssec_valid)->std::string {
+        if (!dnssec_valid) {
+          err = std::string("Invalid DNSSEC for ") + url;
+          return {};
+        }
+        if (addresses.empty()) {
+          err = std::string("No Monero address found at ") + url;
+          return {};
+        }
+        return addresses[0];
+      }))
+    {
+      throw std::runtime_error(err);
+    }
+    monero_message_signature_result result;
+    result.m_is_good = false;
+    result.m_is_old = false;
+
+    static const size_t v1_header_len = strlen("SigV1");
+    static const size_t v2_header_len = strlen("SigV2");
+    const bool v1 = signature.size() >= v1_header_len && signature.substr(0, v1_header_len) == "SigV1";
+    const bool v2 = signature.size() >= v2_header_len && signature.substr(0, v2_header_len) == "SigV2";
+    if (!v1 && !v2)
+    {
+      std::cout << "Signature header check error" << std::endl;
+      return result;
+    }
+    crypto::hash hash;
+    if (v1)
+    {
+      crypto::cn_fast_hash(msg.data(), msg.size(), hash);
+    }
+    std::string decoded;
+    if (!tools::base58::decode(signature.substr(v1 ? v1_header_len : v2_header_len), decoded)) {
+      std::cout << "Signature decoding error" << std::endl;
+      return result;
+    }
+    crypto::signature s;
+    if (sizeof(s) != decoded.size()) {
+      std::cout << "Signature decoding error" << std::endl;
+      return result;
+    }
+    memcpy(&s, decoded.data(), sizeof(s));
+
+    // Test each mode and return which mode, if either, succeeded
+    if (v2)
+        hash = get_message_hash(msg,info.address.m_spend_public_key,info.address.m_view_public_key,(uint8_t) 0);
+    if (crypto::check_signature(hash, info.address.m_spend_public_key, s))
+    {
+      result.m_is_good = true;
+      result.m_signature_type = monero_message_signature_type::SIGN_WITH_SPEND_KEY;
+      result.m_is_old = !v2;
+      result.m_version = v1 ? 1u : 2u;
+      return result;
+    }
+
+    if (v2)
+        hash = get_message_hash(msg,info.address.m_spend_public_key,info.address.m_view_public_key,(uint8_t) 1);
+    if (crypto::check_signature(hash, info.address.m_view_public_key, s))
+    {
+      result.m_is_good = true;
+      result.m_signature_type = monero_message_signature_type::SIGN_WITH_VIEW_KEY;
+      result.m_is_old = !v2;
+      result.m_version = v1 ? 1u : 2u;
+      return result;
+    }
+
+    // Both modes failed
+    return result;  
   }
 
   void monero_wallet_keys::close(bool save) {
@@ -308,6 +464,136 @@ namespace monero {
 
   // ------------------------------- PRIVATE HELPERS ----------------------------
 
+  /**
+   * Generates a key image for an output note (enote) in a simplified manner.
+   * This function already assumes that we checked that the onetime address was addressed to `received_subaddr`.
+   * 
+   * @param ephem_pubkey is the tx main pubkey or an additional pubkey
+   * @param tx_output_index is the index of the enote in the local output set of the tx
+   * @param received_subaddr is the index of the recipient's subaddress
+   * @param ack recipient's account keys, including 
+   * @param hwdev Hardware device used for cryptographic operations
+   */
+  crypto::key_image generate_key_image_for_enote_simplified(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr, const cryptonote::account_keys &ack, hw::device &hwdev) {
+    // notation:
+    //   - R: ephem_pubkey
+    //   - a: ack.m_view_secret_key [private viewkey]
+    //   - b: ack.m_spend_secret_key [private spendkey]
+    //   - idx: tx_output_index
+    //   - index_major: received_subaddr.major
+    //   - index_minor: received_subaddr.minor
+    //   - Hs() [hash-to-scalar]
+    //   - Hp() [hash-to-point]
+
+    // 1. Diffie-Helman derived secret D = a R
+    crypto::key_derivation recv_derivation;
+    CHECK_AND_ASSERT_THROW_MES(hwdev.generate_key_derivation(ephem_pubkey, ack.m_view_secret_key, recv_derivation),
+      "Failed to perform Diffie-Helman exchange against tx ephem pubkey");
+
+    // 2. Non-address-extended onetime key secret u = Hs(D || idx) + b
+    crypto::secret_key onetime_privkey_unextended;
+    hwdev.derive_secret_key(recv_derivation, tx_output_index, ack.m_spend_secret_key, onetime_privkey_unextended);
+
+    // 3. Subaddress key extension s = Hs(a || index_major || index_minor) if is subaddress, else s = 0
+    const crypto::secret_key subaddr_ext{received_subaddr.is_zero() ?
+      crypto::secret_key{} : hwdev.get_subaddress_secret_key(ack.m_view_secret_key, received_subaddr)};
+
+    // 4. Onetime address private key x = u + s
+    crypto::secret_key onetime_privkey;
+    hwdev.sc_secret_add(onetime_privkey, onetime_privkey_unextended, subaddr_ext);
+
+    // 5. Onetime address K = x G
+    crypto::public_key onetime_pubkey;
+    CHECK_AND_ASSERT_THROW_MES(hwdev.secret_key_to_public_key(onetime_privkey, onetime_pubkey),
+      "Failed to make public key");
+
+    // 6. Key image I = x Hp(K)
+    crypto::key_image ki;
+    hwdev.generate_key_image(onetime_pubkey, onetime_privkey, ki);
+
+    return ki;
+  }
+
+  crypto::key_image monero_wallet_keys::generate_key_image_for_enote(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr) const {
+    return generate_key_image_for_enote_simplified(ephem_pubkey, tx_output_index, received_subaddr, m_account.get_keys(), m_account.get_device());
+  }
+
+  monero_key_image monero_wallet_keys::generate_key_image(const std::string &tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const {
+    crypto::public_key tx_pub_key;
+    string_tools::hex_to_pod(tx_public_key, tx_pub_key);
+
+    return generate_key_image(tx_pub_key, out_index, received_subaddr);
+  }
+
+  monero_key_image monero_wallet_keys::generate_key_image(const crypto::public_key& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const {
+    monero_key_image result;
+
+    crypto::key_image key_image = generate_key_image_for_enote(tx_public_key, out_index, received_subaddr);
+
+    result.m_hex = string_tools::pod_to_hex(key_image);
+
+    return result;
+  }
+
+  bool monero_wallet_keys::key_image_is_ours(crypto::key_image &key_image, const crypto::public_key& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const {
+    std::string ki = string_tools::pod_to_hex(key_image);
+
+    //auto found = std::find(m_generated_key_images->begin(), m_generated_key_images->end(), ki);
+
+    //if (found != m_generated_key_images->end()) return true;
+    
+    crypto::key_image enote_key_image = generate_key_image_for_enote(tx_public_key, out_index, received_subaddr);
+    std::string enote_ki = string_tools::pod_to_hex(enote_key_image);
+
+    if (ki == enote_ki) {
+      m_generated_key_images->push_back(enote_ki);
+      return true;
+    }
+
+    return false;
+  }
+
+  bool monero_wallet_keys::key_image_is_ours(std::string &key_image, const std::string& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const {
+    crypto::key_image ki;
+    crypto::public_key tx_pub_key;
+
+    string_tools::hex_to_pod(key_image, ki);
+    string_tools::hex_to_pod(tx_public_key, tx_pub_key);
+
+    return key_image_is_ours(ki, tx_pub_key, out_index, received_subaddr);
+  }
+
+  std::string monero_wallet_keys::encrypt(const char *plaintext, size_t len, const crypto::secret_key &skey, bool authenticated) const
+  {
+    crypto::chacha_key key;
+    crypto::generate_chacha_key(&skey, sizeof(skey), key, 1);
+    std::string ciphertext;
+    crypto::chacha_iv iv = crypto::rand<crypto::chacha_iv>();
+    ciphertext.resize(len + sizeof(iv) + (authenticated ? sizeof(crypto::signature) : 0));
+    crypto::chacha20(plaintext, len, key, iv, &ciphertext[sizeof(iv)]);
+    memcpy(&ciphertext[0], &iv, sizeof(iv));
+    if (authenticated)
+    {
+      crypto::hash hash;
+      crypto::cn_fast_hash(ciphertext.data(), ciphertext.size() - sizeof(signature), hash);
+      crypto::public_key pkey;
+      crypto::secret_key_to_public_key(skey, pkey);
+      crypto::signature &signature = *(crypto::signature*)&ciphertext[ciphertext.size() - sizeof(crypto::signature)];
+      crypto::generate_signature(hash, pkey, skey, signature);
+    }
+    return ciphertext;
+  }
+
+  std::string monero_wallet_keys::encrypt(const std::string &plaintext, const crypto::secret_key &skey, bool authenticated) const
+  {
+    return encrypt(plaintext.data(), plaintext.size(), skey, authenticated);
+  }
+
+  std::string monero_wallet_keys::encrypt_with_private_view_key(const std::string &plaintext, bool authenticated) const
+  {
+    return encrypt(plaintext, m_account.get_keys().m_view_secret_key, authenticated);
+  }
+
   void monero_wallet_keys::init_common() {
     m_primary_address = m_account.get_public_address_str(static_cast<cryptonote::network_type>(m_network_type));
     const cryptonote::account_keys& keys = m_account.get_keys();
@@ -316,5 +602,8 @@ namespace monero {
     m_pub_spend_key = epee::string_tools::pod_to_hex(keys.m_account_address.m_spend_public_key);
     m_prv_spend_key = epee::string_tools::pod_to_hex(unwrap(unwrap(keys.m_spend_secret_key)));
     if (m_prv_spend_key == "0000000000000000000000000000000000000000000000000000000000000000") m_prv_spend_key = "";
+
+    m_generated_key_images = std::make_unique<std::vector<std::string>>();
   }
 }
+
