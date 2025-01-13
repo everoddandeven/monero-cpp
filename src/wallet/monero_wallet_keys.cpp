@@ -487,7 +487,7 @@ namespace monero {
    * @param ack recipient's account keys, including 
    * @param hwdev Hardware device used for cryptographic operations
    */
-  crypto::key_image generate_key_image_for_enote_simplified(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr, const cryptonote::account_keys &ack, hw::device &hwdev) {
+  std::pair<crypto::key_image, crypto::signature> generate_key_image_for_enote_simplified(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr, const cryptonote::account_keys &ack, hw::device &hwdev) {
     // notation:
     //   - R: ephem_pubkey
     //   - a: ack.m_view_secret_key [private viewkey]
@@ -524,10 +524,17 @@ namespace monero {
     crypto::key_image ki;
     hwdev.generate_key_image(onetime_pubkey, onetime_privkey, ki);
 
-    return ki;
+    // sign the key image with the output secret key
+    crypto::signature signature;
+    std::vector<const crypto::public_key*> key_ptrs;
+    key_ptrs.push_back(&ephem_pubkey);
+
+    crypto::generate_ring_signature((const crypto::hash&)ki, ki, key_ptrs, onetime_privkey, 0, &signature);
+
+    return std::make_pair(ki, signature);
   }
 
-  crypto::key_image monero_wallet_keys::generate_key_image_for_enote(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr) const {
+  std::pair<crypto::key_image, crypto::signature> monero_wallet_keys::generate_key_image_for_enote(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr) const {
     return generate_key_image_for_enote_simplified(ephem_pubkey, tx_output_index, received_subaddr, m_account.get_keys(), m_account.get_device());
   }
 
@@ -541,9 +548,10 @@ namespace monero {
   monero_key_image monero_wallet_keys::generate_key_image(const crypto::public_key& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const {
     monero_key_image result;
 
-    crypto::key_image key_image = generate_key_image_for_enote(tx_public_key, out_index, received_subaddr);
+    std::pair<crypto::key_image, crypto::signature> key_image = generate_key_image_for_enote(tx_public_key, out_index, received_subaddr);
 
-    result.m_hex = string_tools::pod_to_hex(key_image);
+    result.m_hex = string_tools::pod_to_hex(key_image.first);
+    result.m_signature = string_tools::pod_to_hex(key_image.second);
 
     return result;
   }
@@ -555,11 +563,11 @@ namespace monero {
 
     //if (found != m_generated_key_images->end()) return true;
     
-    crypto::key_image enote_key_image = generate_key_image_for_enote(tx_public_key, out_index, received_subaddr);
-    std::string enote_ki = string_tools::pod_to_hex(enote_key_image);
+    std::pair<crypto::key_image, crypto::signature> enote_key_image = generate_key_image_for_enote(tx_public_key, out_index, received_subaddr);
+    std::string enote_ki = string_tools::pod_to_hex(enote_key_image.first);
 
     if (ki == enote_ki) {
-      m_generated_key_images->push_back(enote_ki);
+      //m_generated_key_images->push_back(enote_ki);
       return true;
     }
 

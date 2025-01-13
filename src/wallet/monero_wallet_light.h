@@ -181,6 +181,7 @@ namespace monero {
     serializable_unordered_map<std::string, std::string> m_attributes;
     serializable_unordered_map<uint32_t, serializable_unordered_map<uint32_t, std::string>> m_subaddress_labels;
 
+    std::vector<std::shared_ptr<monero_key_image>> imported_key_images;
     std::vector<std::string> m_frozen_key_images;
 
     bool m_load_deprecated_formats;
@@ -275,6 +276,8 @@ namespace monero {
     bool output_is_locked(monero_light_output output) const;
     bool key_image_is_spent(std::string &key_image) const;
     bool key_image_is_spent(crypto::key_image &key_image) const;
+    bool key_image_is_spent(std::shared_ptr<monero_key_image> key_image) const;
+    bool key_image_is_spent(monero_key_image& key_image) const;
 
     std::vector<std::shared_ptr<monero_transfer>> get_transfers_aux(const monero_transfer_query& query) const;
     std::vector<std::shared_ptr<monero_transfer>> get_transfers_aux() const { return get_transfers_aux(monero_transfer_query()); };

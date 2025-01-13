@@ -151,7 +151,7 @@ namespace monero {
 
     monero_key_image generate_key_image(const std::string &tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const;
     monero_key_image generate_key_image(const crypto::public_key& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const;
-    crypto::key_image generate_key_image_for_enote(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr) const;
+    std::pair<crypto::key_image, crypto::signature> generate_key_image_for_enote(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr) const;
     bool key_image_is_ours(crypto::key_image &key_image, const crypto::public_key& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const;
     bool key_image_is_ours(std::string &key_image, const std::string& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const;
 

@@ -1650,7 +1650,62 @@ namespace monero {
   }
 
   std::shared_ptr<monero_key_image_import_result> monero_wallet_light::import_key_images(const std::vector<std::shared_ptr<monero_key_image>>& key_images) {
-    throw std::runtime_error("monero_wallet_light::import_key_images(): not implemented");
+    std::shared_ptr<monero_key_image_import_result> result = std::make_shared<monero_key_image_import_result>();
+    result->m_height = 0;
+    result->m_spent_amount = 0;
+    result->m_unspent_amount = 0;
+    
+    if (key_images.empty()) {
+      return result;
+    }
+
+    uint64_t spent_amount = 0;
+    uint64_t unspent_amount = 0;
+
+    // validate key images
+    
+    std::vector<std::pair<crypto::key_image, crypto::signature>> ski;
+    ski.resize(key_images.size());
+    for (uint64_t n = 0; n < ski.size(); ++n) {
+      if (!epee::string_tools::hex_to_pod(key_images[n]->m_hex.get(), ski[n].first)) {
+        throw std::runtime_error("failed to parse key image");
+      }
+      if (!epee::string_tools::hex_to_pod(key_images[n]->m_signature.get(), ski[n].second)) {
+        throw std::runtime_error("failed to parse signature");
+      }
+    }
+    bool check_spent = is_connected_to_daemon();
+
+    auto unspent_outs_res = get_unspent_outs();
+    auto unspent_outs = *unspent_outs_res.m_outputs;
+
+    if (key_images.size() > unspent_outs.size()) {
+      throw std::runtime_error("blockchain is out of date compared to the signed key images");
+    }
+
+    size_t imported_key_images_size = imported_key_images.size();
+    size_t key_images_size = key_images.size();
+
+    if (imported_key_images_size < key_images_size) imported_key_images.resize(key_images_size);
+    
+    for (size_t i = 0; i < key_images_size; i++) {
+      imported_key_images[i] = key_images[i];
+
+      if (check_spent) {
+        if (key_image_is_spent(key_images[i])) {
+          spent_amount += gen_utils::uint64_t_cast(unspent_outs[i].m_amount.get());
+        }
+        else {
+          unspent_amount += gen_utils::uint64_t_cast(unspent_outs[i].m_amount.get());
+        }
+      }
+    }
+
+    result->m_height = unspent_outs[key_images_size - 1].m_height;
+    result->m_spent_amount = spent_amount;
+    result->m_unspent_amount = unspent_amount;
+
+    return result;
   }
 
   std::string monero_wallet_light::get_tx_note(const std::string& tx_hash) const {
@@ -2717,6 +2772,18 @@ namespace monero {
     }
 
     return false;
+  }
+
+  bool monero_wallet_light::key_image_is_spent(std::shared_ptr<monero_key_image> key_image) const {
+    if (key_image->m_hex == boost::none) return false;
+
+    return key_image_is_spent(key_image->m_hex.get());
+  }
+
+  bool monero_wallet_light::key_image_is_spent(monero_key_image& key_image) const {
+    if (key_image.m_hex == boost::none) return false;
+
+    return key_image_is_spent(key_image.m_hex.get());
   }
 
   bool monero_wallet_light::output_is_spent(monero_light_output &output) const {
