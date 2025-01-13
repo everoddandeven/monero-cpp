@@ -2085,6 +2085,8 @@ namespace monero {
       const uint64_t tx_height = is_confirmed ? *tx.m_height : 0;
       const uint64_t num_confirmations = is_confirmed ? current_height - tx_height : 0;
       const uint64_t change_amount =  is_change ? total_received : 0;
+      uint64_t input_sum = 0;
+      uint64_t output_sum = 0;
       std::string tx_hash = *tx.m_hash;
 
       std::shared_ptr<monero_tx_wallet> tx_wallet = std::make_shared<monero_tx_wallet>();
@@ -2145,29 +2147,35 @@ namespace monero {
         for (auto &out : get_tx_unspent_outs(tx_hash, unspent_outs_res)) {
           std::shared_ptr<monero_incoming_transfer> incoming_transfer = std::make_shared<monero_incoming_transfer>();
 
+          uint64_t out_amount = gen_utils::uint64_t_cast(*out.m_amount);
+
           incoming_transfer->m_tx = tx_wallet;
           incoming_transfer->m_account_index = *out.m_recipient->m_maj_i;
           incoming_transfer->m_subaddress_index = *out.m_recipient->m_min_i;
           incoming_transfer->m_address = get_address(*out.m_recipient->m_maj_i, *out.m_recipient->m_min_i);
-          incoming_transfer->m_amount = gen_utils::uint64_t_cast(*out.m_amount);
+          incoming_transfer->m_amount = out_amount;
           incoming_transfer->m_num_suggested_confirmations = 10 - num_confirmations;
 
           tx_wallet->m_incoming_transfers.push_back(incoming_transfer);
 
           std::shared_ptr<monero_output_wallet> output = std::make_shared<monero_output_wallet>();
-          auto out_key_image = std::make_shared<monero_key_image>();
 
-          if (out.m_key_image != boost::none) out_key_image->m_hex = *out.m_key_image;
+          if (out.m_key_image != boost::none) {
+          auto out_key_image = std::make_shared<monero_key_image>();
+            out_key_image->m_hex = *out.m_key_image;
+            output->m_key_image = out_key_image;
+          }
           
           output->m_account_index = *out.m_recipient->m_maj_i;
           output->m_subaddress_index = *out.m_recipient->m_min_i;
-          output->m_amount = gen_utils::uint64_t_cast(*out.m_amount);
+          output->m_amount = out_amount;
           output->m_is_spent = output_is_spent(out);
-          output->m_key_image = out_key_image;
           output->m_index = gen_utils::uint64_t_cast(*out.m_global_index);
           
           output->m_tx = tx_wallet;
           output->m_stealth_public_key = out.m_public_key;
+
+          output_sum += out_amount;
 
           tx_wallet->m_outputs.push_back(output);
 
@@ -2207,17 +2215,22 @@ namespace monero {
           }
 
           std::shared_ptr<monero_output_wallet> output = std::make_shared<monero_output_wallet>();
-          auto out_key_image = std::make_shared<monero_key_image>();
-          out_key_image->m_hex = spent_output.m_key_image;
+          
+          if (spent_output.m_key_image != boost::none) {
+            auto out_key_image = std::make_shared<monero_key_image>();
+            out_key_image->m_hex = spent_output.m_key_image;
+            output->m_key_image = out_key_image;
+          }
           
           output->m_account_index = account_idx;
           output->m_subaddress_index = subaddress_idx;
           output->m_amount = out_amount;
           output->m_is_spent = true;
-          output->m_key_image = out_key_image;
           output->m_index = spent_output.m_out_index;
           output->m_tx = tx_wallet;
-          //output->m_stealth_public_key = spent_output.m_
+          //output->m_stealth_public_key = spent_output.m_public_key;
+
+          input_sum += out_amount;
 
           tx_wallet->m_inputs.push_back(output);
         }
@@ -2226,6 +2239,9 @@ namespace monero {
 
         transfers.push_back(outgoing_transfer);
       }
+
+      tx_wallet->m_input_sum = input_sum;
+      tx_wallet->m_output_sum = output_sum;
 
     }
     
