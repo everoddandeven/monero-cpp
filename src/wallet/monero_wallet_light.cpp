@@ -711,12 +711,15 @@ namespace monero {
   }
 
   uint64_t monero_wallet_light::get_balance() const {
-    const auto resp = get_address_info();
+    const auto resp = get_unspent_outs(true);
 
-    uint64_t total_received = gen_utils::uint64_t_cast(*resp.m_total_received);
-    uint64_t total_sent = gen_utils::uint64_t_cast(*resp.m_total_sent);
+    uint64_t balance = 0;
 
-    return total_received - total_sent;
+    for (auto const &output : *resp.m_outputs) {
+      balance += gen_utils::uint64_t_cast(*output.m_amount);
+    }
+
+    return balance;
   }
 
   uint64_t monero_wallet_light::get_balance(uint32_t account_index) const {
@@ -2063,7 +2066,7 @@ namespace monero {
     const auto txs = *address_txs_res.m_transactions;
 
     for (const auto &tx : txs) {
-      const uint64_t total_sent = gen_utils::uint64_t_cast(*tx.m_total_sent);    
+      uint64_t total_sent = gen_utils::uint64_t_cast(*tx.m_total_sent);    
       const uint64_t total_received = gen_utils::uint64_t_cast(*tx.m_total_received);
       
       const uint64_t fee = gen_utils::uint64_t_cast(*tx.m_fee);
@@ -2071,6 +2074,9 @@ namespace monero {
       const bool is_incoming = total_received > 0;
       const bool is_outgoing = total_sent > 0;
       const bool is_change = is_incoming && is_outgoing;
+
+      if (is_change) total_sent -= total_received;
+
       const bool is_locked = *tx.m_unlock_time > current_height;
       const bool is_confirmed = !tx.m_mempool;
       const bool is_miner_tx = *tx.m_coinbase == true;
@@ -2078,7 +2084,7 @@ namespace monero {
       const uint64_t timestamp = gen_utils::timestamp_to_epoch(*tx.m_timestamp);
       const uint64_t tx_height = is_confirmed ? *tx.m_height : 0;
       const uint64_t num_confirmations = is_confirmed ? current_height - tx_height : 0;
-      const uint64_t change_amount =  is_change ? total_sent - total_received : 0;
+      const uint64_t change_amount =  is_change ? total_received : 0;
       std::string tx_hash = *tx.m_hash;
 
       std::shared_ptr<monero_tx_wallet> tx_wallet = std::make_shared<monero_tx_wallet>();
@@ -2102,6 +2108,11 @@ namespace monero {
       tx_wallet->m_payment_id = tx.m_payment_id;
       tx_wallet->m_num_dummy_outputs = tx.m_mixin;
       tx_wallet->m_ring_size = *tx.m_mixin + 1;
+      tx_wallet->m_change_amount = change_amount;
+
+      if (is_change && tx.m_recipient != boost::none) {
+        tx_wallet->m_change_address = get_address(*tx.m_recipient->m_maj_i, *tx.m_recipient->m_min_i);
+      }
 
       if (is_confirmed) {
         auto it = std::find_if(blocks.begin(), blocks.end(), [tx_height](const std::shared_ptr<monero_block>& p) {
@@ -2130,7 +2141,7 @@ namespace monero {
         tx_wallet->m_block = block;
       }
 
-      if (is_incoming) {
+      if (is_incoming && !is_change) {
         for (auto &out : get_tx_unspent_outs(tx_hash, unspent_outs_res)) {
           std::shared_ptr<monero_incoming_transfer> incoming_transfer = std::make_shared<monero_incoming_transfer>();
 
@@ -2170,7 +2181,7 @@ namespace monero {
         const auto sender = get_transaction_sender(tx);
         outgoing_transfer->m_tx = tx_wallet;
         
-        outgoing_transfer->m_amount = total_sent;
+        outgoing_transfer->m_amount = total_sent - fee;
         outgoing_transfer->m_account_index = sender.major;
 
         for (const auto spent_output : *tx.m_spent_outputs) {
