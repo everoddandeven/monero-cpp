@@ -126,6 +126,7 @@ namespace monero {
     monero_tx_set describe_tx_set(const monero_tx_set& tx_set) override;
     monero_tx_set sign_txs(const std::string& unsigned_tx_hex) override;
     std::vector<std::string> submit_txs(const std::string& signed_tx_hex) override;
+    std::string get_tx_key(const std::string& tx_hash) const override;
 
     std::string get_tx_note(const std::string& tx_hash) const override;
     std::vector<std::string> get_tx_notes(const std::vector<std::string>& tx_hashes) const override;
@@ -183,6 +184,9 @@ namespace monero {
 
     std::vector<std::shared_ptr<monero_key_image>> imported_key_images;
     std::vector<std::string> m_frozen_key_images;
+
+    serializable_unordered_map<crypto::hash, crypto::secret_key> m_tx_keys;
+    serializable_unordered_map<crypto::hash, std::vector<crypto::secret_key>> m_additional_tx_keys;
 
     bool m_load_deprecated_formats;
 
@@ -300,6 +304,8 @@ namespace monero {
     std::unordered_map<crypto::public_key, cryptonote::subaddress_index> get_subaddresses_map() const;
     tools::wallet2::unsigned_tx_set parse_unsigned_tx(const std::string &unsigned_tx_st) const;
     std::string sign_tx(tools::wallet2::unsigned_tx_set &exported_txs, std::vector<tools::wallet2::pending_tx> &txs, tools::wallet2::signed_tx_set &signed_txes);
+    bool get_tx_key_cached(const crypto::hash &txid, crypto::secret_key &tx_key, std::vector<crypto::secret_key> &additional_tx_keys) const;
+    bool get_tx_key(const crypto::hash &txid, crypto::secret_key &tx_key, std::vector<crypto::secret_key> &additional_tx_keys) const;
 
 };
 

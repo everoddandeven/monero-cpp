@@ -8,6 +8,7 @@
 #include "net/jsonrpc_structs.h"
 #include "string_tools.h"
 #include "serialization/serialization.h"
+#include "device/device_cold.hpp"
 
 #define APPROXIMATE_INPUT_BYTES 80
 #define OUTPUT_EXPORT_FILE_MAGIC "Monero output export\004"
@@ -1435,6 +1436,31 @@ namespace monero {
     m_wallet_listener->on_spend_tx_hashes(hashes);
 
     return hashes;
+  }
+
+  std::string monero_wallet_light::get_tx_key(const std::string& tx_hash) const {
+    MTRACE("monero_wallet_light::get_tx_key()");
+
+    // validate and parse tx hash
+    crypto::hash _tx_hash;
+    if (!epee::string_tools::hex_to_pod(tx_hash, _tx_hash)) {
+      throw std::runtime_error("TX hash has invalid format");
+    }
+
+    // get tx key and additional keys
+    crypto::secret_key _tx_key;
+    std::vector<crypto::secret_key> additional_tx_keys;
+    if (!get_tx_key(_tx_hash, _tx_key, additional_tx_keys)) {
+      throw std::runtime_error("No tx secret key is stored for this tx");
+    }
+
+    // build and return tx key with additional keys
+    epee::wipeable_string s;
+    s += epee::to_hex::wipeable_string(_tx_key);
+    for (uint64_t i = 0; i < additional_tx_keys.size(); ++i) {
+      s += epee::to_hex::wipeable_string(additional_tx_keys[i]);
+    }
+    return std::string(s.data(), s.size());
   }
 
   void monero_wallet_light::freeze_output(const std::string& key_image) {
@@ -3403,6 +3429,84 @@ namespace monero {
     std::cout << "Saving signed tx data (with encryption): " << oss.str() << std::endl;
     std::string ciphertext = encrypt_with_private_view_key(oss.str());
     return std::string(SIGNED_TX_PREFIX) + ciphertext;
+  }
+
+  bool monero_wallet_light::get_tx_key_cached(const crypto::hash &txid, crypto::secret_key &tx_key, std::vector<crypto::secret_key> &additional_tx_keys) const
+  {
+    additional_tx_keys.clear();
+    const std::unordered_map<crypto::hash, crypto::secret_key>::const_iterator i = m_tx_keys.find(txid);
+    if (i == m_tx_keys.end())
+      return false;
+    tx_key = i->second;
+    if (tx_key == crypto::null_skey)
+      return false;
+    const auto j = m_additional_tx_keys.find(txid);
+    if (j != m_additional_tx_keys.end())
+      additional_tx_keys = j->second;
+    return true;
+  }
+
+  bool monero_wallet_light::get_tx_key(const crypto::hash &txid, crypto::secret_key &tx_key, std::vector<crypto::secret_key> &additional_tx_keys) const
+  {
+    bool r = get_tx_key_cached(txid, tx_key, additional_tx_keys);
+    if (r)
+    {
+      MDEBUG("tx key cached for txid: " << txid);
+      return true;
+    }
+
+    auto & hwdev = m_account.get_device();
+
+    // So far only Cold protocol devices are supported.
+    if (hwdev.device_protocol() != hw::device::PROTOCOL_COLD)
+    {
+      return false;
+    }
+
+    auto dev_cold = dynamic_cast<::hw::device_cold*>(&hwdev);
+    CHECK_AND_ASSERT_THROW_MES(dev_cold, "Device does not implement cold signing interface");
+    if (!dev_cold->is_get_tx_key_supported())
+    {
+      MDEBUG("get_tx_key not supported by the device");
+      return false;
+    }
+
+    hw::device_cold::tx_key_data_t tx_key_data;
+
+    auto unspent_outs_res = get_unspent_outs();
+    auto unspent_outs = *unspent_outs_res.m_outputs;
+    std::string tx_hash = epee::string_tools::pod_to_hex(txid);
+
+    auto found_out = std::find_if(unspent_outs.begin(), unspent_outs.end(), [tx_hash](const monero_light_output &out){
+      return *out.m_tx_hash == tx_hash;
+    });
+
+    if (found_out == unspent_outs.end()) return false;
+
+    tx_key_data.tx_prefix_hash = *found_out->m_tx_prefix_hash;
+
+    if (tx_key_data.tx_prefix_hash.empty())
+    {
+      return false;
+    }
+
+    std::vector<crypto::secret_key> tx_keys;
+    dev_cold->get_tx_key(tx_keys, tx_key_data, m_account.get_keys().m_view_secret_key);
+    if (tx_keys.empty())
+    {
+      MDEBUG("Empty tx keys for txid: " << txid);
+      return false;
+    }
+
+    if (tx_keys[0] == crypto::null_skey)
+    {
+      return false;
+    }
+
+    tx_key = tx_keys[0];
+    tx_keys.erase(tx_keys.begin());
+    additional_tx_keys = tx_keys;
+    return true;
   }
 
   // --------------------------- LWS UTILS --------------------------
