@@ -145,6 +145,34 @@ void monero_utils::validate_private_spend_key(const std::string& private_spend_k
   }
 }
 
+bool monero_utils::parse_long_payment_id(const std::string& payment_id_str, crypto::hash& payment_id)
+{
+  cryptonote::blobdata payment_id_data;
+  if (!epee::string_tools::parse_hexstr_to_binbuff(payment_id_str, payment_id_data)) {
+    return false;
+  }
+  if (sizeof(crypto::hash) != payment_id_data.size()) {
+    return false;
+  }
+  payment_id = *reinterpret_cast<const crypto::hash*>(payment_id_data.data());
+  
+  return true;
+}
+
+bool monero_utils::parse_short_payment_id(const std::string& payment_id_str, crypto::hash8& payment_id)
+{
+  cryptonote::blobdata payment_id_data;
+  if (!epee::string_tools::parse_hexstr_to_binbuff(payment_id_str, payment_id_data)) {
+    return false;
+  }
+  if (sizeof(crypto::hash8) != payment_id_data.size()) {
+    return false;
+  }
+  payment_id = *reinterpret_cast<const crypto::hash8*>(payment_id_data.data());
+  
+  return true;
+}
+
 // -------------------------- BINARY SERIALIZATION ----------------------------
 
 void monero_utils::json_to_binary(const std::string &json, std::string &bin) {

@@ -85,6 +85,8 @@ namespace monero_utils
   void json_to_binary(const std::string &json, std::string &bin);
   void binary_to_json(const std::string &bin, std::string &json);
   void binary_blocks_to_json(const std::string &bin, std::string &json);
+  bool parse_long_payment_id(const std::string& payment_id_str, crypto::hash& payment_id);
+  bool parse_short_payment_id(const std::string& payment_id_str, crypto::hash8& payment_id);
 
   // ------------------------------ RAPIDJSON ---------------------------------
 
