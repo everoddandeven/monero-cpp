@@ -269,12 +269,25 @@ namespace monero {
 
   monero_integrated_address monero_wallet_keys::get_integrated_address(const std::string& standard_address, const std::string& payment_id) const {
     std::cout << "monero_wallet_keys::get_integrated_address()" << std::endl;
-    throw std::runtime_error("monero_wallet_keys::get_integrated_address() not implemented");
+    return monero_utils::get_integrated_address(m_network_type, standard_address, payment_id);
   }
 
   monero_integrated_address monero_wallet_keys::decode_integrated_address(const std::string& integrated_address) const {
     std::cout << "monero_wallet_keys::decode_integrated_address()" << std::endl;
-    throw std::runtime_error("monero_wallet_keys::decode_integrated_address() not implemented");
+
+    cryptonote::address_parse_info info;
+    if (!cryptonote::get_account_address_from_str(info, get_nettype(), integrated_address)) throw std::runtime_error("invalid address");
+
+    cryptonote::account_public_address address = info.address;
+    monero_integrated_address result;
+    result.m_integrated_address = integrated_address;
+    result.m_standard_address = string_tools::pod_to_hex(address.m_view_public_key);
+    
+    if (info.has_payment_id == true) {
+      result.m_payment_id = string_tools::pod_to_hex(info.payment_id);
+    }
+
+    return result;
   }
 
   monero_account monero_wallet_keys::get_account(uint32_t account_idx, bool include_subaddresses) const {
