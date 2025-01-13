@@ -123,6 +123,7 @@ namespace monero {
     std::vector<std::shared_ptr<monero_tx_wallet>> create_txs(const monero_tx_config& config) override;
     
     std::vector<std::string> relay_txs(const std::vector<std::string>& tx_metadatas) override;
+    monero_tx_set describe_tx_set(const monero_tx_set& tx_set) override;
     monero_tx_set sign_txs(const std::string& unsigned_tx_hex) override;
     std::vector<std::string> submit_txs(const std::string& signed_tx_hex) override;
 
