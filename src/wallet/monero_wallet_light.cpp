@@ -3235,10 +3235,13 @@ namespace monero {
 
   monero_light_upsert_subaddrs_response monero_wallet_light::upsert_subaddrs(uint32_t account_idx, uint32_t subaddress_idx, bool get_all) const {
     std::cout << "monero_wallet_light::upsert_subaddrs(" << account_idx << ", " << subaddress_idx << ")" << std::endl;
+    if (account_idx == 0) throw std::runtime_error("subaddress major lookahead may not be zero");
+    if (subaddress_idx == 0) throw std::runtime_error("subaddress minor lookahead may not be zero");
+
     monero_light_subaddrs subaddrs;
-    monero_light_index_range index_range(0, subaddress_idx);
+    monero_light_index_range index_range(0, subaddress_idx - 1);
     
-    for(uint32_t i = 0; i <= account_idx; i++) {
+    for(uint32_t i = 0; i < account_idx; i++) {
       subaddrs[i] = std::vector<monero_light_index_range>();
       subaddrs[i].push_back(index_range);
     }
