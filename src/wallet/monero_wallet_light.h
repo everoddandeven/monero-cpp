@@ -102,25 +102,26 @@ namespace monero {
     uint64_t get_unlocked_balance() const override;
     uint64_t get_unlocked_balance(uint32_t account_idx) const override;
     uint64_t get_unlocked_balance(uint32_t account_idx, uint32_t subaddress_idx) const override;
-
     std::vector<monero_account> get_accounts(bool include_subaddresses, const std::string& tag) const override;
+    monero_account get_account(const uint32_t account_idx, bool include_subaddresses) const override;
     monero_account create_account(const std::string& label = "") override;
     std::vector<monero_subaddress> get_subaddresses(const uint32_t account_idx, const std::vector<uint32_t>& subaddress_indices) const override;
     monero_subaddress create_subaddress(uint32_t account_idx, const std::string& label = "") override;
     void set_subaddress_label(uint32_t account_idx, uint32_t subaddress_idx, const std::string& label = "") override;
-
     std::vector<std::shared_ptr<monero_tx_wallet>> get_txs() const override;
     std::vector<std::shared_ptr<monero_tx_wallet>> get_txs(const monero_tx_query& query) const override;
     std::vector<std::shared_ptr<monero_transfer>> get_transfers(const monero_transfer_query& query) const override;
     std::vector<std::shared_ptr<monero_output_wallet>> get_outputs() const { return get_outputs(monero_output_query()); };
     std::vector<std::shared_ptr<monero_output_wallet>> get_outputs(const monero_output_query& query) const override;
     std::string export_outputs(bool all = false) const override;
-
+    int import_outputs(const std::string& outputs_hex) override;
     std::vector<std::shared_ptr<monero_key_image>> export_key_images(bool all = true) const override;
+    std::shared_ptr<monero_key_image_import_result> import_key_images(const std::vector<std::shared_ptr<monero_key_image>>& key_images) override;
     void freeze_output(const std::string& key_image) override;
     void thaw_output(const std::string& key_image) override;
     bool is_output_frozen(const std::string& key_image) override;
     std::vector<std::shared_ptr<monero_tx_wallet>> create_txs(const monero_tx_config& config) override;
+    
     std::vector<std::string> relay_txs(const std::vector<std::string>& tx_metadatas) override;
     //monero_tx_set sign_txs(const std::string& unsigned_tx_hex) override;
     std::vector<std::string> submit_txs(const std::string& signed_tx_hex) override;

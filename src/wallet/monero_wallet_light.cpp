@@ -211,34 +211,6 @@ namespace monero {
     std::unique_ptr<tools::threadpool> m_notification_pool;
   };
 
-  bool parse_long_payment_id(const std::string& payment_id_str, crypto::hash& payment_id)
-  {
-    cryptonote::blobdata payment_id_data;
-    if (!epee::string_tools::parse_hexstr_to_binbuff(payment_id_str, payment_id_data)) {
-      return false;
-    }
-    if (sizeof(crypto::hash) != payment_id_data.size()) {
-      return false;
-    }
-    payment_id = *reinterpret_cast<const crypto::hash*>(payment_id_data.data());
-    
-    return true;
-  }
-
-  bool parse_short_payment_id(const std::string& payment_id_str, crypto::hash8& payment_id)
-  {
-    cryptonote::blobdata payment_id_data;
-    if (!epee::string_tools::parse_hexstr_to_binbuff(payment_id_str, payment_id_data)) {
-      return false;
-    }
-    if (sizeof(crypto::hash8) != payment_id_data.size()) {
-      return false;
-    }
-    payment_id = *reinterpret_cast<const crypto::hash8*>(payment_id_data.data());
-    
-    return true;
-  }
-
   bool _rct_hex_to_rct_commit(const std::string &rct_string, rct::key &rct_commit) {
     // rct string is empty if output is non RCT
     if (rct_string.empty()) {
@@ -298,7 +270,7 @@ namespace monero {
     bool r = false;
     if (payment_id_string != boost::none && payment_id_string->size() > 0) {
       crypto::hash payment_id;
-      r = parse_long_payment_id(*payment_id_string, payment_id);
+      r = monero_utils::parse_long_payment_id(*payment_id_string, payment_id);
       if (r) {
         std::string extra_nonce;
         cryptonote::set_payment_id_to_tx_extra_nonce(extra_nonce, payment_id);
@@ -308,7 +280,7 @@ namespace monero {
         }
       } else {
         crypto::hash8 payment_id8;
-        r = parse_short_payment_id(*payment_id_string, payment_id8);
+        r = monero_utils::parse_short_payment_id(*payment_id_string, payment_id8);
         if (!r) { // a PID has been specified by the user but the last resort in validating it fails; error
           throw std::runtime_error("Invalid pid");
         }
@@ -851,6 +823,19 @@ namespace monero {
     return result;
   }
 
+  monero_account monero_wallet_light::get_account(const uint32_t account_idx, bool include_subaddresses) const {
+    monero_account account = monero_wallet_keys::get_account(account_idx, false);
+
+    account.m_balance = get_balance(account_idx);
+    account.m_unlocked_balance = get_unlocked_balance(account_idx);
+
+    if (include_subaddresses) {
+      account.m_subaddresses = monero_wallet::get_subaddresses(account_idx);
+    }
+
+    return account;
+  }
+
   monero_account monero_wallet_light::create_account(const std::string& label) {
     uint32_t last_account_idx = 0;
 
@@ -1169,6 +1154,10 @@ namespace monero {
     return epee::string_tools::buff_to_hex_nodelimer(outputs_str);
   }
 
+  int monero_wallet_light::import_outputs(const std::string& outputs_hex) {
+    throw std::runtime_error("monero_wallet_light::import_key_images(): not supported");
+  }
+
   std::vector<std::shared_ptr<monero_key_image>> monero_wallet_light::export_key_images(bool all) const {
     if (!all) throw std::runtime_error("must export all key images");
     std::vector<std::shared_ptr<monero_key_image>> key_images;
@@ -1188,6 +1177,10 @@ namespace monero {
     }
 
     return key_images;
+  }
+
+  std::shared_ptr<monero_key_image_import_result> monero_wallet_light::import_key_images(const std::vector<std::shared_ptr<monero_key_image>>& key_images) {
+    throw std::runtime_error("monero_wallet_light::import_key_images(): not implemented");
   }
 
   std::string monero_wallet_light::get_tx_note(const std::string& tx_hash) const {
@@ -2475,7 +2468,7 @@ namespace monero {
           return false;
         }
         crypto::hash hash;
-        if (!parse_long_payment_id(kv[1], hash))
+        if (!monero_utils::parse_long_payment_id(kv[1], hash))
         {
           error = "Invalid payment id: " + kv[1];
           return false;
