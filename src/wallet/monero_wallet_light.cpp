@@ -9,9 +9,11 @@
 #include "string_tools.h"
 #include "serialization/serialization.h"
 
-
 #define APPROXIMATE_INPUT_BYTES 80
 #define OUTPUT_EXPORT_FILE_MAGIC "Monero output export\004"
+#define UNSIGNED_TX_PREFIX "Monero unsigned tx set\005"
+#define SIGNED_TX_PREFIX "Monero signed tx set\005"
+#define MULTISIG_UNSIGNED_TX_PREFIX "Monero multisig unsigned tx set\001"
 
 namespace
 {
@@ -959,6 +961,46 @@ namespace monero {
     return hashes;
   }
 
+  // implementation based on monero-project wallet_rpc_server.cpp::on_sign_transfer()
+  monero_tx_set monero_wallet_light::sign_txs(const std::string& unsigned_tx_hex) {
+    if (key_on_device()) throw std::runtime_error("command not supported by HW wallet");
+    if (is_view_only()) throw std::runtime_error("command not supported by view-only wallet");
+
+    cryptonote::blobdata blob;
+    if (!epee::string_tools::parse_hexstr_to_binbuff(unsigned_tx_hex, blob)) throw std::runtime_error("Failed to parse hex.");
+
+    tools::wallet2::unsigned_tx_set exported_txs = parse_unsigned_tx(blob);
+
+    std::vector<tools::wallet2::pending_tx> ptxs;
+    std::vector<std::shared_ptr<monero_tx_wallet>> txs;
+    try {
+      tools::wallet2::signed_tx_set signed_txs;
+      std::string ciphertext = sign_tx(exported_txs, ptxs, signed_txs);
+      if (ciphertext.empty()) throw std::runtime_error("Failed to sign unsigned tx");
+
+      // init tx set
+      monero_tx_set tx_set;
+      tx_set.m_signed_tx_hex = epee::string_tools::buff_to_hex_nodelimer(ciphertext);
+      for (auto &ptx : ptxs) {
+
+        // init tx
+        std::shared_ptr<monero_tx_wallet> tx = std::make_shared<monero_tx_wallet>();
+        tx->m_is_outgoing = true;
+        tx->m_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx));
+        tx->m_key = epee::string_tools::pod_to_hex(unwrap(unwrap(ptx.tx_key)));
+        for (const crypto::secret_key& additional_tx_key : ptx.additional_tx_keys) {
+            tx->m_key = tx->m_key.get() += epee::string_tools::pod_to_hex(unwrap(unwrap(additional_tx_key)));
+        }
+        tx_set.m_txs.push_back(tx);
+      }
+      return tx_set;
+    } catch (const std::exception &e) {
+      throw std::runtime_error(std::string("Failed to sign unsigned tx: ") + e.what());
+    }
+  }
+
+
+
   std::vector<std::string> monero_wallet_light::submit_txs(const std::string& signed_tx_hex) {
     std::vector<std::string> hashes;
     
@@ -1416,6 +1458,7 @@ namespace monero {
   void monero_wallet_light::init_common() {
     monero_wallet_keys::init_common();
 
+    m_load_deprecated_formats = false;
     m_is_synced = false;
     m_rescan_on_sync = false;
     m_syncing_enabled = false;
@@ -2596,6 +2639,251 @@ namespace monero {
     }
 
     return std::make_tuple(offset, unspent_outs.size(), outs);
+  }
+
+  tools::wallet2::unsigned_tx_set monero_wallet_light::parse_unsigned_tx(const std::string &unsigned_tx_st) const
+  {
+    tools::wallet2::unsigned_tx_set exported_txs;
+
+    std::string s = unsigned_tx_st;
+    const size_t magiclen = strlen(UNSIGNED_TX_PREFIX) - 1;
+    if (strncmp(s.c_str(), UNSIGNED_TX_PREFIX, magiclen))
+    {
+      throw std::runtime_error("Bad magic from unsigned tx");
+    }
+    s = s.substr(magiclen);
+    const char version = s[0];
+    s = s.substr(1);
+    if (version == '\003')
+    {
+      if (!m_load_deprecated_formats)
+      {
+        throw std::runtime_error("Not loading deprecated format");
+      }
+      try
+      {
+        std::istringstream iss(s);
+        boost::archive::portable_binary_iarchive ar(iss);
+        ar >> exported_txs;
+      }
+      catch (...)
+      {
+        throw std::runtime_error("Failed to parse data from unsigned tx");
+      }
+    }
+    else if (version == '\004')
+    {
+      if (!m_load_deprecated_formats)
+      {
+        throw std::runtime_error("Not loading deprecated format");
+      }
+      try
+      {
+        s = decrypt_with_private_view_key(s);
+        try
+        {
+          std::istringstream iss(s);
+          boost::archive::portable_binary_iarchive ar(iss);
+          ar >> exported_txs;
+        }
+        catch (...)
+        {
+          throw std::runtime_error("Failed to parse data from unsigned tx");
+        }
+      }
+      catch (const std::exception &e)
+      {
+        std::string msg = std::string("Failed to decrypt unsigned tx: ") + e.what();
+        throw std::runtime_error(msg);
+      }
+    }
+    else if (version == '\005')
+    {
+      try { s = decrypt_with_private_view_key(s); }
+      catch(const std::exception &e) { 
+        std::string msg = std::string("Failed to decrypt unsigned tx: ") + e.what();
+        throw std::runtime_error(msg); 
+      }
+      try
+      {
+        binary_archive<false> ar{epee::strspan<std::uint8_t>(s)};
+        if (!::serialization::serialize(ar, exported_txs))
+        {
+          throw std::runtime_error("Failed to parse data from unsigned tx");
+        }
+      }
+      catch (...)
+      {
+        throw std::runtime_error("Failed to parse data from unsigned tx");
+      }
+    }
+    else
+    {
+      throw std::runtime_error("Unsupported version in unsigned tx");
+    }
+
+    std::cout << "Loaded tx unsigned data from binary: " << exported_txs.txes.size() << " transactions" << std::endl;
+  
+    return exported_txs;
+  }
+
+  std::string monero_wallet_light::sign_tx(tools::wallet2::unsigned_tx_set &exported_txs, std::vector<tools::wallet2::pending_tx> &txs, tools::wallet2::signed_tx_set &signed_txes)
+  {
+    //if (!std::get<2>(exported_txs.new_transfers).empty())
+    //  import_outputs(exported_txs.new_transfers);
+    //else if (!std::get<2>(exported_txs.transfers).empty())
+    //  import_outputs(exported_txs.transfers);
+
+    auto subaddresses = get_subaddresses_map();
+
+    // sign the transactions
+    for (size_t n = 0; n < exported_txs.txes.size(); ++n)
+    {
+      tools::wallet2::tx_construction_data &sd = exported_txs.txes[n];
+      if(sd.sources.empty()) throw std::runtime_error("empty sources");
+      if(sd.unlock_time) throw std::runtime_error("unlock time is non-zero");
+      std::cout << " " << (n+1) << ": " << sd.sources.size() << " inputs, ring size " << sd.sources[0].outputs.size() << std::endl;
+      signed_txes.ptx.push_back(tools::wallet2::pending_tx());
+      tools::wallet2::pending_tx &ptx = signed_txes.ptx.back();
+      rct::RCTConfig rct_config = sd.rct_config;
+      crypto::secret_key tx_key;
+      std::vector<crypto::secret_key> additional_tx_keys;
+      
+      bool r = cryptonote::construct_tx_and_get_tx_key(m_account.get_keys(), subaddresses, sd.sources, sd.splitted_dsts, sd.change_dts.addr, sd.extra, ptx.tx, tx_key, additional_tx_keys, sd.use_rct, rct_config, sd.use_view_tags);
+      if(!r) throw std::runtime_error("tx not constructed");
+      // we don't test tx size, because we don't know the current limit, due to not having a blockchain,
+      // and it's a bit pointless to fail there anyway, since it'd be a (good) guess only. We sign anyway,
+      // and if we really go over limit, the daemon will reject when it gets submitted. Chances are it's
+      // OK anyway since it was generated in the first place, and rerolling should be within a few bytes.
+
+      // normally, the tx keys are saved in commit_tx, when the tx is actually sent to the daemon.
+      // we can't do that here since the tx will be sent from the compromised wallet, which we don't want
+      // to see that info, so we save it here
+      //if (store_tx_info() && tx_key != crypto::null_skey)
+      //{
+      //  const crypto::hash txid = get_transaction_hash(ptx.tx);
+      //  m_tx_keys[txid] = tx_key;
+      //  m_additional_tx_keys[txid] = additional_tx_keys;
+      //}
+
+      std::string key_images;
+      bool all_are_txin_to_key = std::all_of(ptx.tx.vin.begin(), ptx.tx.vin.end(), [&](const cryptonote::txin_v& s_e) -> bool
+      {
+        CHECKED_GET_SPECIFIC_VARIANT(s_e, const cryptonote::txin_to_key, in, false);
+        key_images += boost::to_string(in.k_image) + " ";
+        return true;
+      });
+      if(!all_are_txin_to_key) throw std::runtime_error("unexpected txin type");
+
+      ptx.key_images = key_images;
+      ptx.fee = 0;
+      for (const auto &i: sd.sources) ptx.fee += i.amount;
+      for (const auto &i: sd.splitted_dsts) ptx.fee -= i.amount;
+      ptx.dust = 0;
+      ptx.dust_added_to_fee = false;
+      ptx.change_dts = sd.change_dts;
+      ptx.selected_transfers = sd.selected_transfers;
+      ptx.tx_key = rct::rct2sk(rct::identity()); // don't send it back to the untrusted view wallet
+      ptx.dests = sd.dests;
+      ptx.construction_data = sd;
+
+      txs.push_back(ptx);
+
+      // add tx keys only to ptx
+      txs.back().tx_key = tx_key;
+      txs.back().additional_tx_keys = additional_tx_keys;
+    }
+
+    // add key image mapping for these txes
+    const auto &keys = m_account.get_keys();
+    hw::device &hwdev = m_account.get_device();
+    for (size_t n = 0; n < exported_txs.txes.size(); ++n)
+    {
+      const cryptonote::transaction &tx = signed_txes.ptx[n].tx;
+
+      crypto::key_derivation derivation;
+      std::vector<crypto::key_derivation> additional_derivations;
+
+      // compute public keys from out secret keys
+      crypto::public_key tx_pub_key;
+      crypto::secret_key_to_public_key(txs[n].tx_key, tx_pub_key);
+      std::vector<crypto::public_key> additional_tx_pub_keys;
+      for (const crypto::secret_key &skey: txs[n].additional_tx_keys)
+      {
+        additional_tx_pub_keys.resize(additional_tx_pub_keys.size() + 1);
+        crypto::secret_key_to_public_key(skey, additional_tx_pub_keys.back());
+      }
+
+      // compute derivations
+      hwdev.set_mode(hw::device::TRANSACTION_PARSE);
+      if (!hwdev.generate_key_derivation(tx_pub_key, keys.m_view_secret_key, derivation))
+      {
+        std::cout << "Failed to generate key derivation from tx pubkey in " << cryptonote::get_transaction_hash(tx) << ", skipping" << std::endl;
+        static_assert(sizeof(derivation) == sizeof(rct::key), "Mismatched sizes of key_derivation and rct::key");
+        memcpy(&derivation, rct::identity().bytes, sizeof(derivation));
+      }
+      for (size_t i = 0; i < additional_tx_pub_keys.size(); ++i)
+      {
+        additional_derivations.push_back({});
+        if (!hwdev.generate_key_derivation(additional_tx_pub_keys[i], keys.m_view_secret_key, additional_derivations.back()))
+        {
+          std::cout << "Failed to generate key derivation from additional tx pubkey in " << cryptonote::get_transaction_hash(tx) << ", skipping" << std::endl;
+          memcpy(&additional_derivations.back(), rct::identity().bytes, sizeof(crypto::key_derivation));
+        }
+      }
+
+      for (size_t i = 0; i < tx.vout.size(); ++i)
+      {
+        crypto::public_key output_public_key;
+        if (!get_output_public_key(tx.vout[i], output_public_key))
+          continue;
+
+        // if this output is back to this wallet, we can calculate its key image already
+        if (!is_out_to_acc_precomp(subaddresses, output_public_key, derivation, additional_derivations, i, hwdev, get_output_view_tag(tx.vout[i])))
+          continue;
+        crypto::key_image ki;
+        cryptonote::keypair in_ephemeral;
+        if (cryptonote::generate_key_image_helper(keys, subaddresses, output_public_key, tx_pub_key, additional_tx_pub_keys, i, in_ephemeral, ki, hwdev))
+          signed_txes.tx_key_images[output_public_key] = ki;
+        else
+          std::cout << "Failed to calculate key image" << std::endl;
+      }
+    }
+
+    // add key images
+    auto unspent_outs_res = get_unspent_outs();
+    auto unspent_outs = *unspent_outs_res.m_outputs;
+    signed_txes.key_images.resize(unspent_outs.size());
+
+    for (size_t i = 0; i < unspent_outs.size(); ++i)
+    {
+      auto unspent_out = unspent_outs[i];
+      
+      //if (!m_transfers[i].m_key_image_known || m_transfers[i].m_key_image_partial)
+      if (!unspent_out.key_image_is_known())
+        std::cout << "WARNING: key image not known in signing wallet at index " << i << std::endl;
+
+      crypto::key_image ski;
+      epee::string_tools::hex_to_pod(*unspent_out.m_key_image, ski);
+      
+      signed_txes.key_images[i] = ski;
+    }
+
+    // save as binary
+    std::ostringstream oss;
+    binary_archive<true> ar(oss);
+    try
+    {
+      if (!::serialization::serialize(ar, signed_txes))
+        return std::string();
+    }
+    catch(...)
+    {
+      return std::string();
+    }
+    std::cout << "Saving signed tx data (with encryption): " << oss.str() << std::endl;
+    std::string ciphertext = encrypt_with_private_view_key(oss.str());
+    return std::string(SIGNED_TX_PREFIX) + ciphertext;
   }
 
   // --------------------------- LWS UTILS --------------------------

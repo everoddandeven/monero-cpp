@@ -123,7 +123,7 @@ namespace monero {
     std::vector<std::shared_ptr<monero_tx_wallet>> create_txs(const monero_tx_config& config) override;
     
     std::vector<std::string> relay_txs(const std::vector<std::string>& tx_metadatas) override;
-    //monero_tx_set sign_txs(const std::string& unsigned_tx_hex) override;
+    monero_tx_set sign_txs(const std::string& unsigned_tx_hex) override;
     std::vector<std::string> submit_txs(const std::string& signed_tx_hex) override;
 
     std::string get_tx_note(const std::string& tx_hash) const override;
@@ -181,6 +181,8 @@ namespace monero {
     serializable_unordered_map<uint32_t, serializable_unordered_map<uint32_t, std::string>> m_subaddress_labels;
 
     std::vector<std::string> m_frozen_key_images;
+
+    bool m_load_deprecated_formats;
 
     static monero_wallet_light* create_wallet_from_seed(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
     static monero_wallet_light* create_wallet_from_keys(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
@@ -291,8 +293,10 @@ namespace monero {
     std::vector<monero_subaddress> get_subaddresses() const;
     void set_tx_note(const crypto::hash &txid, const std::string &note);
     std::string get_tx_note(const crypto::hash &txid) const;
-    
     std::unordered_map<crypto::public_key, cryptonote::subaddress_index> get_subaddresses_map() const;
+    tools::wallet2::unsigned_tx_set parse_unsigned_tx(const std::string &unsigned_tx_st) const;
+    std::string sign_tx(tools::wallet2::unsigned_tx_set &exported_txs, std::vector<tools::wallet2::pending_tx> &txs, tools::wallet2::signed_tx_set &signed_txes);
+
 };
 
 }

@@ -607,6 +607,35 @@ namespace monero {
     return encrypt(plaintext, m_account.get_keys().m_view_secret_key, authenticated);
   }
 
+  template<typename T>
+  T monero_wallet_keys::decrypt(const std::string &ciphertext, const crypto::secret_key &skey, bool authenticated) const
+  {
+    const size_t prefix_size = sizeof(chacha_iv) + (authenticated ? sizeof(crypto::signature) : 0);
+    if(ciphertext.size() < prefix_size) throw std::runtime_error("Unexpected ciphertext size");
+    uint64_t kdf_rounds = 1;
+    crypto::chacha_key key;
+    crypto::generate_chacha_key(&skey, sizeof(skey), key, kdf_rounds);
+    const crypto::chacha_iv &iv = *(const crypto::chacha_iv*)&ciphertext[0];
+    if (authenticated)
+    {
+      crypto::hash hash;
+      crypto::cn_fast_hash(ciphertext.data(), ciphertext.size() - sizeof(signature), hash);
+      crypto::public_key pkey;
+      crypto::secret_key_to_public_key(skey, pkey);
+      const crypto::signature &signature = *(const crypto::signature*)&ciphertext[ciphertext.size() - sizeof(crypto::signature)];
+      if(!crypto::check_signature(hash, pkey, signature)) throw std::runtime_error("Failed to authenticate ciphertext");
+    }
+    std::unique_ptr<char[]> buffer{new char[ciphertext.size() - prefix_size]};
+    auto wiper = epee::misc_utils::create_scope_leave_handler([&]() { memwipe(buffer.get(), ciphertext.size() - prefix_size); });
+    crypto::chacha20(ciphertext.data() + sizeof(iv), ciphertext.size() - prefix_size, key, iv, buffer.get());
+    return T(buffer.get(), ciphertext.size() - prefix_size);
+  }
+
+  std::string monero_wallet_keys::decrypt_with_private_view_key(const std::string &ciphertext, bool authenticated) const
+  {
+    return decrypt(ciphertext, m_account.get_keys().m_view_secret_key, authenticated);
+  }
+
   void monero_wallet_keys::init_common() {
     m_primary_address = m_account.get_public_address_str(static_cast<cryptonote::network_type>(m_network_type));
     const cryptonote::account_keys& keys = m_account.get_keys();

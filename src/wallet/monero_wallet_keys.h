@@ -159,5 +159,8 @@ namespace monero {
     std::string encrypt(const std::string &plaintext, const crypto::secret_key &skey, bool authenticated = true) const;
     std::string encrypt_with_private_view_key(const std::string &plaintext, bool authenticated = true) const;
 
+    template<typename T=std::string> T decrypt(const std::string &ciphertext, const crypto::secret_key &skey, bool authenticated = true) const;
+    std::string decrypt_with_private_view_key(const std::string &ciphertext, bool authenticated = true) const;
+
   };
 }
