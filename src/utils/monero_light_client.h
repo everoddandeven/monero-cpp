@@ -44,12 +44,12 @@ namespace monero {
       boost::optional<epee::net_utils::http::login> m_credentials;
       std::unique_ptr<epee::net_utils::http::abstract_http_client> m_http_client;
 
-      void assert_connected() const { if (!is_connected()) throw new std::runtime_error("Not connected"); };
+      void assert_connected() const { if (!is_connected()) throw std::runtime_error("Not connected"); };
 
       template<class t_request, class t_response>
       inline int invoke_post(const boost::string_ref uri, const t_request& request, t_response& res, std::chrono::milliseconds timeout = std::chrono::seconds(15)) const {
         std::cout << "monero_light_client::invoke_post(): " << uri << std::endl;
-        if (!m_http_client) throw new std::runtime_error("http client not set");
+        if (!m_http_client) throw std::runtime_error("http client not set");
 
         rapidjson::Document document(rapidjson::Type::kObjectType);
         rapidjson::Value req = request.to_rapidjson_val(document.GetAllocator());

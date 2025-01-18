@@ -107,6 +107,17 @@ void print_wallet_info(monero_wallet *wallet_restored, bool relay_tx) {
 
   std::cout << "Exported outputs: " << exported_outputs << std::endl;
 
+  const auto transfers = wallet_restored->get_transfers(monero_transfer_query());
+
+  std::cout << "Found transfers: " << transfers.size() << std::endl;
+
+  for (auto transfer : transfers) {
+    const auto tf_hash = transfer->m_tx->m_hash.get();
+    const auto tf_amount = transfer->m_amount.get();
+    const std::string tf_type = transfer->is_incoming() ? "Icoming" : "Outgoing";
+    std::cout << tf_type << " transfer " << tf_hash << ", amount: " << tf_amount << std::endl;
+  }
+
   if (!relay_tx) return;
 
   std::cout << "Creating tx..." << std::endl;
@@ -137,11 +148,10 @@ int main(int argc, const char* argv[]) {
     monero_wallet_config wallet_config = get_light_config();
 
     std::cout << "Creating light wallet" << std::endl;
-    monero_wallet_light* wallet_restored = monero_wallet_light::create_wallet(wallet_config);
+    monero_wallet_light* wallet_restored = monero_wallet_light::open_wallet(wallet_config);
     std::cout << "Created light wallet" << std::endl;
 
     print_wallet_info(wallet_restored, false);
-
 
     monero_wallet_config wallet_full_config = get_full_config();
 

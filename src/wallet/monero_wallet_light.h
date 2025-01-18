@@ -66,6 +66,10 @@ namespace monero {
     monero_wallet_light(std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory = nullptr);
     ~monero_wallet_light();
 
+    std::string get_seed() const override;
+    std::string get_seed_language() const override;
+    std::string get_private_spend_key() const override;
+
     void set_daemon_connection(const std::string& uri, const std::string& username = "", const std::string& password = "") override;
     void set_daemon_connection(const boost::optional<monero_rpc_connection>& connection) override;
     void set_daemon_proxy(const std::string& uri = "") override;
@@ -105,6 +109,7 @@ namespace monero {
     std::vector<monero_account> get_accounts(bool include_subaddresses, const std::string& tag) const override;
     monero_account get_account(const uint32_t account_idx, bool include_subaddresses) const override;
     monero_account create_account(const std::string& label = "") override;
+    monero_subaddress get_subaddress(const uint32_t account_idx, const uint32_t subaddress_idx) const override;
     std::vector<monero_subaddress> get_subaddresses(const uint32_t account_idx, const std::vector<uint32_t>& subaddress_indices) const override;
     monero_subaddress create_subaddress(uint32_t account_idx, const std::string& label = "") override;
     void set_subaddress_label(uint32_t account_idx, uint32_t subaddress_idx, const std::string& label = "") override;
@@ -156,12 +161,13 @@ namespace monero {
     boost::optional<uint64_t> m_prior_attempt_size_calcd_fee;
     boost::optional<monero_light_spendable_random_outputs> m_prior_attempt_unspent_outs_to_mix_outs;
     size_t m_construction_attempt;
+    uint64_t m_last_block_reward;
 
     // blockchain sync management
     mutable std::atomic<bool> m_is_synced;       // whether or not wallet is synced
     mutable std::atomic<bool> m_is_connected;    // cache connection status to avoid unecessary RPC calls
     boost::condition_variable m_sync_cv;         // to make sync threads woke
-    boost::mutex m_sync_mutex;                   // synchronize sync() and syncAsync() requests
+    mutable boost::recursive_mutex m_sync_mutex;                   // synchronize sync() and syncAsync() requests
     std::atomic<bool> m_rescan_on_sync;          // whether or not to rescan on sync
     std::atomic<bool> m_syncing_enabled;         // whether or not auto sync is enabled
     std::atomic<bool> m_sync_loop_running;       // whether or not the syncing thread is shut down
@@ -188,6 +194,8 @@ namespace monero {
     serializable_unordered_map<crypto::hash, crypto::secret_key> m_tx_keys;
     serializable_unordered_map<crypto::hash, std::vector<crypto::secret_key>> m_additional_tx_keys;
 
+    std::shared_ptr<std::vector<std::shared_ptr<monero_tx_wallet>>> m_unconfirmed_txs;
+
     bool m_load_deprecated_formats;
 
     static monero_wallet_light* create_wallet_from_seed(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
@@ -198,7 +206,8 @@ namespace monero {
     monero_light_get_address_txs_response get_address_txs() const;
     monero_light_get_unspent_outs_response get_unspent_outs(bool filter_spent) const;
     monero_light_get_unspent_outs_response get_unspent_outs(uint64_t amount, uint32_t mixin = 0, bool use_dust = true, uint64_t dust_threshold = 0, bool filter_spent = true) const;
-    monero_light_get_unspent_outs_response get_unspent_outs(std::string amount = 0, uint32_t mixin = 0, bool use_dust = true, std::string dust_threshold = "0", bool filter_spent = true) const;
+    monero_light_get_unspent_outs_response get_unspent_outs(std::string amount = "0", uint32_t mixin = 0, bool use_dust = true, std::string dust_threshold = "0", bool filter_spent = true) const;
+    monero_light_get_unspent_outs_response get_spendable_outs(uint64_t amount, uint32_t mixin = 0, bool use_dust = true, uint64_t dust_threshold = 0, bool filter_spent = true) const;
     monero_light_get_random_outs_response get_random_outs(uint32_t count, std::vector<uint64_t> &amounts) const;
     monero_light_get_random_outs_response get_random_outs(uint32_t count, std::vector<std::string> &amounts) const;
     monero_light_get_random_outs_response get_random_outs(const std::vector<monero_light_output> &outputs) const;
@@ -282,9 +291,15 @@ namespace monero {
     bool key_image_is_spent(crypto::key_image &key_image) const;
     bool key_image_is_spent(std::shared_ptr<monero_key_image> key_image) const;
     bool key_image_is_spent(monero_key_image& key_image) const;
+    bool subaddress_is_used(uint32_t account_idx, uint32_t subaddress_idx) const;
+    uint64_t get_subaddress_num_unspent_outs(uint32_t account_idx, uint32_t subaddress_idx) const;
+    uint64_t get_subaddress_num_blocks_to_unlock(uint32_t account_idx, uint32_t subaddress_idx) const;
+    uint64_t get_output_num_blocks_to_unlock(monero_light_output &output) const;
 
     std::vector<std::shared_ptr<monero_transfer>> get_transfers_aux(const monero_transfer_query& query) const;
     std::vector<std::shared_ptr<monero_transfer>> get_transfers_aux() const { return get_transfers_aux(monero_transfer_query()); };
+    std::vector<std::shared_ptr<monero_output_wallet>> get_outputs_aux(const monero_output_query& query) const;
+    bool is_output_frozen(const monero_light_output& output) const;
 
     /**
       * 
@@ -307,6 +322,7 @@ namespace monero {
     bool get_tx_key_cached(const crypto::hash &txid, crypto::secret_key &tx_key, std::vector<crypto::secret_key> &additional_tx_keys) const;
     bool get_tx_key(const crypto::hash &txid, crypto::secret_key &tx_key, std::vector<crypto::secret_key> &additional_tx_keys) const;
 
+    void remove_unconfirmed_tx(const std::string &hash) const;
 };
 
 }

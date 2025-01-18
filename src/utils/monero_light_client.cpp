@@ -9,9 +9,12 @@ namespace monero {
   }
 
   monero_light_client::monero_light_client(std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory) {
-    m_credentials = boost::none;
+    auto credentials = std::make_shared<epee::net_utils::http::login>();
+    credentials->username = std::string("");
+    credentials->password = std::string("");
     m_server = std::string("");
     m_proxy = std::string("");
+    m_credentials = *credentials;
 
     if (http_client_factory != nullptr) m_http_client = http_client_factory->create();
     else {
@@ -21,21 +24,27 @@ namespace monero {
   }
 
   void monero_light_client::set_connection(monero_rpc_connection connection) {
+    boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
+
+    if (connection.m_username != boost::none && connection.m_password != boost::none) {
+      std::cout << "before set_crendetials()" << std::endl;
+      set_credentials(*connection.m_username, *connection.m_password);
+    }
     if (connection.m_uri != boost::none) {
+      std::cout << "before set uri: " << *connection.m_uri << std::endl;
       set_server(*connection.m_uri);
     }
     else {
+      std::cout << "before set uri epmty" << std::endl;
       set_server("");
-    }
-
-    if (connection.m_username != boost::none && connection.m_password != boost::none) {
-      set_credentials(*connection.m_username, *connection.m_password);
     }
   }
 
   void monero_light_client::set_connection(boost::optional<monero_rpc_connection> connection) {
+    boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
+
     if (connection != boost::none) {
-      set_connection(*connection);
+      set_connection(connection.get());
     }
     else {
       set_connection(monero_rpc_connection());
@@ -51,20 +60,27 @@ namespace monero {
 
     if (credentials != boost::none) {
       connection.m_username = credentials->username;
-      connection.m_password = std::string(credentials->password.data());
+      epee::wipeable_string wipeablePassword = credentials->password;
+      std::string password = std::string(wipeablePassword.data(), wipeablePassword.size());
+      if (!password.empty()) connection.m_password = password;
     }
 
     return connection;
   }
 
   void monero_light_client::set_server(std::string uri) {
+    boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
     if (m_http_client) {
+      if (m_http_client->is_connected()) {
+        m_http_client->disconnect();
+      }
+
       if (!m_http_client->set_server(uri, m_credentials)) {
-        throw new std::runtime_error("Could not set server " + uri);
+        throw std::runtime_error("Could not set light wallet server " + uri);
       }
 
       if (!m_http_client->connect(std::chrono::seconds(15))) {
-        throw new std::runtime_error("Could not connect to light wallet server");
+        if (!uri.empty()) std::cout << "Could not connect to light wallet server at " << uri << std::endl;
       }
     }
 
@@ -72,9 +88,10 @@ namespace monero {
   }
 
   void monero_light_client::set_proxy(std::string uri) {
+    boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
     if (m_http_client) {
       if(!m_http_client->set_proxy(uri)) {
-        throw new std::runtime_error("Could not set proxy");
+        throw std::runtime_error("Could not set proxy");
       }
     }
 
@@ -82,6 +99,8 @@ namespace monero {
   }
 
   void monero_light_client::set_credentials(std::string username, std::string password) {
+    boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
+
     auto credentials = std::make_shared<epee::net_utils::http::login>();
 
     credentials->username = username;
@@ -102,7 +121,7 @@ namespace monero {
     int response_code = invoke_post("/get_address_info", req, res);
 
     if (response_code != 200) {
-      throw new std::runtime_error("Could not get address info");
+      throw std::runtime_error("Could not get address info");
     }
 
     return res;
@@ -120,7 +139,7 @@ namespace monero {
     int response_code = invoke_post("/get_address_txs", req, res);
 
     if (response_code != 200) {
-      throw new std::runtime_error("Could not get address txs");
+      throw std::runtime_error("Could not get address txs");
     }
 
     return res;
@@ -142,7 +161,7 @@ namespace monero {
     int response_code = invoke_post("/get_unspent_outs", req, res);
 
     if (response_code != 200) {
-      throw new std::runtime_error("Could not get unspent outputs");
+      throw std::runtime_error("Could not get unspent outputs");
     }
 
     return res;
@@ -160,7 +179,7 @@ namespace monero {
     int response_code = invoke_post("/get_random_outs", req, res);
 
     if (response_code != 200) {
-      throw new std::runtime_error("Could not get random outputs");
+      throw std::runtime_error("Could not get random outputs");
     }
 
     return res;
@@ -178,7 +197,7 @@ namespace monero {
     int response_code = invoke_post("/get_subaddrs", req, res);
 
     if (response_code != 200) {
-      throw new std::runtime_error("Could not get subaddresses");
+      throw std::runtime_error("Could not get subaddresses");
     }
 
     return res;
@@ -198,7 +217,7 @@ namespace monero {
     int response_code = invoke_post("/upsert_subaddrs", req, res);
 
     if (response_code != 200) {
-      throw new std::runtime_error("Could not upsert subaddresses");
+      throw std::runtime_error("Could not upsert subaddresses");
     }
 
     return res;    
@@ -220,7 +239,7 @@ namespace monero {
     int response_code = invoke_post("/provision_subaddrs", req, res);
 
     if (response_code != 200) {
-      throw new std::runtime_error("Could not provision subaddresses");
+      throw std::runtime_error("Could not provision subaddresses");
     }
 
     return res;
@@ -241,7 +260,7 @@ namespace monero {
     int response_code = invoke_post("/login", req, res);
 
     if (response_code != 200) {
-      throw new std::runtime_error("Could not login on account: " + address);
+      throw std::runtime_error("Could not login on account: " + address);
     }
 
     return res;
@@ -259,7 +278,7 @@ namespace monero {
     int response_code = invoke_post("/import_request", req, res);
 
     if (response_code != 200) {
-      throw new std::runtime_error("Could not import wallet");
+      throw std::runtime_error("Could not import wallet");
     }
 
     return res;
@@ -276,7 +295,7 @@ namespace monero {
     int response_code = invoke_post("/submit_raw_tx", req, res);
 
     if (response_code != 200) {
-      throw new std::runtime_error("Could not relay tx: " + tx);
+      throw std::runtime_error("Could not relay tx: " + tx);
     }
 
     return res;

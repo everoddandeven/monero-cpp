@@ -71,6 +71,83 @@ using namespace crypto;
  * Public library interface.
  */
 namespace monero {
+
+  // ------------------------------- KEY IMAGE UTILS -------------------------------
+
+  std::shared_ptr<monero_key_image> monero_key_image_cache::get(const crypto::public_key& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) {
+    boost::lock_guard<boost::mutex> lock(m_mutex);
+    auto it_pubkey = m_cache.find(tx_public_key);
+    if (it_pubkey != m_cache.end()) {
+        auto it_out_index = it_pubkey->second.find(out_index);
+        if (it_out_index != it_pubkey->second.end()) {
+            auto it_subaddr = it_out_index->second.find(received_subaddr);
+            if (it_subaddr != it_out_index->second.end()) {
+                return std::get<0>(it_subaddr->second);
+            }
+        }
+    }
+    return nullptr;
+  }
+  
+  std::shared_ptr<monero_key_image> monero_key_image_cache::get(const std::string& tx_public_key, uint64_t out_index, uint32_t account_idx, uint32_t subaddress_idx) {
+    crypto::public_key _tx_public_key;
+    cryptonote::subaddress_index _subaddress_idx;
+    _subaddress_idx.major = account_idx;
+    _subaddress_idx.minor = subaddress_idx;
+
+    string_tools::hex_to_pod(tx_public_key, _tx_public_key);
+
+    return get(_tx_public_key, out_index, _subaddress_idx);
+  }
+
+  void monero_key_image_cache::set(std::shared_ptr<monero_key_image> key_image, const crypto::public_key& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr, bool request) {
+    boost::lock_guard<boost::mutex> lock(m_mutex); // Lock con Boost
+    m_cache[tx_public_key][out_index][received_subaddr] = std::make_pair(key_image, request);
+  }
+
+  void monero_key_image_cache::set(std::shared_ptr<monero_key_image> key_image, const std::string& tx_public_key, uint64_t out_index, uint32_t account_idx, uint32_t subaddress_idx, bool request) {
+    crypto::public_key _tx_public_key;
+    cryptonote::subaddress_index _subaddress_idx;
+    _subaddress_idx.major = account_idx;
+    _subaddress_idx.minor = subaddress_idx;
+
+    string_tools::hex_to_pod(tx_public_key, _tx_public_key);
+
+    set(key_image, _tx_public_key, out_index, _subaddress_idx, request);
+  }
+
+  bool monero_key_image_cache::request(const crypto::public_key& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) {
+    boost::lock_guard<boost::mutex> lock(m_mutex);
+    auto it_pubkey = m_cache.find(tx_public_key);
+    if (it_pubkey != m_cache.end()) {
+        auto it_out_index = it_pubkey->second.find(out_index);
+        if (it_out_index != it_pubkey->second.end()) {
+            auto it_subaddr = it_out_index->second.find(received_subaddr);
+            if (it_subaddr != it_out_index->second.end()) {
+                return std::get<1>(it_subaddr->second);
+            }
+        }
+    }
+    return false;
+  }
+
+  bool monero_key_image_cache::request(const std::string& tx_public_key, uint64_t out_index, uint32_t account_idx, uint32_t subaddress_idx) {
+    crypto::public_key _tx_public_key;
+    cryptonote::subaddress_index _subaddress_idx;
+    _subaddress_idx.major = account_idx;
+    _subaddress_idx.minor = subaddress_idx;
+
+    string_tools::hex_to_pod(tx_public_key, _tx_public_key);
+
+    return request(_tx_public_key, out_index, _subaddress_idx);   
+  }
+
+  void monero_key_image_cache::set_request(const std::string& tx_public_key, uint64_t out_index, uint32_t account_idx, uint32_t subaddress_idx, bool request) {
+    auto key_image = get(tx_public_key, out_index, account_idx, subaddress_idx);
+    if (key_image == nullptr) throw std::runtime_error("Key image not found in cache");
+    set(key_image, tx_public_key, out_index, account_idx, subaddress_idx, request);
+  }
+
   // Set up an address signature message hash
   // Hash data: domain separator, spend public key, view public key, mode identifier, payload data
   static crypto::hash get_message_hash(const std::string &data, const crypto::public_key &spend_key, const crypto::public_key &view_key, const uint8_t mode)
@@ -269,6 +346,9 @@ namespace monero {
 
   monero_integrated_address monero_wallet_keys::get_integrated_address(const std::string& standard_address, const std::string& payment_id) const {
     std::cout << "monero_wallet_keys::get_integrated_address()" << std::endl;
+    if (standard_address.empty()) {
+      return monero_utils::get_integrated_address(m_network_type, get_primary_address(), payment_id);
+    }
     return monero_utils::get_integrated_address(m_network_type, standard_address, payment_id);
   }
 
@@ -276,12 +356,13 @@ namespace monero {
     std::cout << "monero_wallet_keys::decode_integrated_address()" << std::endl;
 
     cryptonote::address_parse_info info;
-    if (!cryptonote::get_account_address_from_str(info, get_nettype(), integrated_address)) throw std::runtime_error("invalid address");
+    if (!cryptonote::get_account_address_from_str(info, get_nettype(), integrated_address)) throw std::runtime_error("Invalid address");
 
     cryptonote::account_public_address address = info.address;
     monero_integrated_address result;
     result.m_integrated_address = integrated_address;
-    result.m_standard_address = string_tools::pod_to_hex(address.m_view_public_key);
+    //result.m_standard_address = string_tools::pod_to_hex(address.m_view_public_key);
+    result.m_standard_address = cryptonote::get_account_address_as_str(get_nettype(), info.is_subaddress, address);
     
     if (info.has_payment_id == true) {
       result.m_payment_id = string_tools::pod_to_hex(info.payment_id);
@@ -358,7 +439,7 @@ namespace monero {
           pkey = keys.m_account_address.m_view_public_key;
           mode = 1;
           break;
-        default: throw new std::runtime_error("Invalid signature type requested");
+        default: throw std::runtime_error("Invalid signature type requested");
       }
       hash = get_message_hash(msg,keys.m_account_address.m_spend_public_key,keys.m_account_address.m_view_public_key,mode);
     }
@@ -535,6 +616,7 @@ namespace monero {
   }
 
   std::pair<crypto::key_image, crypto::signature> monero_wallet_keys::generate_key_image_for_enote(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr) const {
+    if (is_view_only()) throw std::runtime_error("cannot generate key image: wallet is view only");
     return generate_key_image_for_enote_simplified(ephem_pubkey, tx_output_index, received_subaddr, m_account.get_keys(), m_account.get_device());
   }
 
@@ -548,26 +630,38 @@ namespace monero {
   monero_key_image monero_wallet_keys::generate_key_image(const crypto::public_key& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const {
     monero_key_image result;
 
+    auto found = m_generated_key_images.get(tx_public_key, out_index, received_subaddr);
+
+    if (found != nullptr) return *found;
+
+    std::cout << "key image not found in cache, generating..." << std::endl;
+
     std::pair<crypto::key_image, crypto::signature> key_image = generate_key_image_for_enote(tx_public_key, out_index, received_subaddr);
 
     result.m_hex = string_tools::pod_to_hex(key_image.first);
     result.m_signature = string_tools::pod_to_hex(key_image.second);
 
+    m_generated_key_images.set(std::make_shared<monero_key_image>(result), tx_public_key, out_index, received_subaddr);
+
     return result;
   }
 
   bool monero_wallet_keys::key_image_is_ours(crypto::key_image &key_image, const crypto::public_key& tx_public_key, uint64_t out_index, const cryptonote::subaddress_index &received_subaddr) const {
-    std::string ki = string_tools::pod_to_hex(key_image);
+    std::string ki = string_tools::pod_to_hex(key_image);    
+    auto found = m_generated_key_images.get(tx_public_key, out_index, received_subaddr);
 
-    //auto found = std::find(m_generated_key_images->begin(), m_generated_key_images->end(), ki);
+    if (found != nullptr) {
+      return found->m_hex.get() == ki;
+    };
 
-    //if (found != m_generated_key_images->end()) return true;
-    
-    std::pair<crypto::key_image, crypto::signature> enote_key_image = generate_key_image_for_enote(tx_public_key, out_index, received_subaddr);
-    std::string enote_ki = string_tools::pod_to_hex(enote_key_image.first);
+    if (is_view_only()) return false;
+
+    std::cout << "key image not found in cache, generating..." << std::endl;
+
+    monero_key_image enote_key_image = generate_key_image(tx_public_key, out_index, received_subaddr);
+    std::string enote_ki = enote_key_image.m_hex.get();
 
     if (ki == enote_ki) {
-      //m_generated_key_images->push_back(enote_ki);
       return true;
     }
 
@@ -653,7 +747,6 @@ namespace monero {
     m_prv_spend_key = epee::string_tools::pod_to_hex(unwrap(unwrap(keys.m_spend_secret_key)));
     if (m_prv_spend_key == "0000000000000000000000000000000000000000000000000000000000000000") m_prv_spend_key = "";
 
-    m_generated_key_images = std::make_unique<std::vector<std::string>>();
   }
 }
 
