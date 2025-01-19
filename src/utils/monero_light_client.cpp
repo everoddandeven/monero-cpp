@@ -4,8 +4,7 @@
 namespace monero {
 
   bool monero_light_client::is_connected() const {
-    if (!m_http_client) return false;
-    return m_http_client->is_connected();
+    return m_connected;
   }
 
   monero_light_client::monero_light_client(std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory) {
@@ -15,6 +14,7 @@ namespace monero {
     m_server = std::string("");
     m_proxy = std::string("");
     m_credentials = *credentials;
+    m_connected = false;
 
     if (http_client_factory != nullptr) m_http_client = http_client_factory->create();
     else {
@@ -70,16 +70,20 @@ namespace monero {
 
   void monero_light_client::set_server(std::string uri) {
     boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
+    
     if (m_http_client) {
       if (m_http_client->is_connected()) {
         m_http_client->disconnect();
+        m_connected = false;
       }
 
       if (!m_http_client->set_server(uri, m_credentials)) {
         throw std::runtime_error("Could not set light wallet server " + uri);
       }
 
-      if (!m_http_client->connect(std::chrono::seconds(15))) {
+      m_connected = m_http_client->connect(std::chrono::seconds(15));
+
+      if (!m_connected) {
         if (!uri.empty()) std::cout << "Could not connect to light wallet server at " << uri << std::endl;
       }
     }

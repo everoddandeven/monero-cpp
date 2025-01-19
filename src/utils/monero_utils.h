@@ -249,15 +249,11 @@ namespace monero_utils
 
   // compute m_num_suggested_confirmations  TODO monero-project: this logic is based on wallet_rpc_server.cpp `set_confirmations` but it should be encapsulated in wallet2
   static void set_num_suggested_confirmations(std::shared_ptr<monero_incoming_transfer>& incoming_transfer, uint64_t blockchain_height, uint64_t block_reward, uint64_t unlock_time) {
-    bool print = incoming_transfer->m_tx->m_hash.get() == "9e9220c9a2947e20a3837a532eefbec7609c030fe1208f40d4ed0c2c493591e0";
-
     if (block_reward == 0) incoming_transfer->m_num_suggested_confirmations = 0;
     else incoming_transfer->m_num_suggested_confirmations = (incoming_transfer->m_amount.get() + block_reward - 1) / block_reward;
     
-    if (print) std::cout << "set num sugg confirmations A: reward: " << block_reward << " num = " << incoming_transfer->m_num_suggested_confirmations << std::endl;
     if (unlock_time < CRYPTONOTE_MAX_BLOCK_NUMBER) {
       if (unlock_time > blockchain_height) incoming_transfer->m_num_suggested_confirmations = std::max(incoming_transfer->m_num_suggested_confirmations.get(), unlock_time - blockchain_height);
-          if (print) std::cout << "set num sugg confirmations B: " << incoming_transfer->m_num_suggested_confirmations << ", unlock_time (" << unlock_time << ") - blockchain_height(" << blockchain_height << "): " << unlock_time - blockchain_height << std::endl;
     } else {
       const uint64_t now = time(NULL);
       if (unlock_time > now) incoming_transfer->m_num_suggested_confirmations = std::max(incoming_transfer->m_num_suggested_confirmations.get(), (unlock_time - now + DIFFICULTY_TARGET_V2 - 1) / DIFFICULTY_TARGET_V2);

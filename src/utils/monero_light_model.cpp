@@ -87,6 +87,8 @@ namespace monero {
     // convert config property tree to monero_wallet_config
     std::shared_ptr<monero_light_output> output = std::make_shared<monero_light_output>();
     output->m_spend_key_images = std::vector<std::string>();
+    std::shared_ptr<monero_light_address_meta> recipient = std::make_shared<monero_light_address_meta>();
+
     for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
         std::string key = it->first;
 
@@ -103,11 +105,11 @@ namespace monero {
         else if (key == std::string("timestamp")) output->m_timestamp = it->second.data();
         else if (key == std::string("height")) output->m_height = it->second.get_value<uint64_t>();
         else if (key == std::string("recipient")) {
-          std::shared_ptr<monero_light_address_meta> recipient = std::make_shared<monero_light_address_meta>();
           monero_light_address_meta::from_property_tree(it->second, recipient);
-          output->m_recipient = *recipient;
         }
     }
+    
+    output->m_recipient = *recipient;
 
     return output;
   }
@@ -158,7 +160,8 @@ namespace monero {
 
     // convert config property tree to monero_wallet_config
     std::shared_ptr<monero_light_spend> spend = std::make_shared<monero_light_spend>();
-    
+    std::shared_ptr<monero_light_address_meta> sender = std::make_shared<monero_light_address_meta>();
+
     for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
         std::string key = it->first;
 
@@ -168,11 +171,11 @@ namespace monero {
         else if (key == std::string("out_index")) spend->m_out_index = it->second.get_value<uint64_t>();
         else if (key == std::string("mixin")) spend->m_mixin = it->second.get_value<uint32_t>();
         else if (key == std::string("sender")) {
-          std::shared_ptr<monero_light_address_meta> sender = std::make_shared<monero_light_address_meta>();
           monero_light_address_meta::from_property_tree(it->second, sender);
-          spend->m_sender = *sender;
         }
     }
+    
+    spend->m_sender = *sender;
 
     return spend;
   }
@@ -759,36 +762,38 @@ namespace monero {
 
   void monero_light_transaction::from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_light_transaction>& transaction) {
     transaction->m_spent_outputs = std::vector<monero_light_spend>();
-    for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
-        std::string key = it->first;
+    std::shared_ptr<monero_light_address_meta> recipient = std::make_shared<monero_light_address_meta>();
 
-        if (key == std::string("id")) transaction->m_id = it->second.get_value<uint64_t>();
-        else if (key == std::string("hash")) transaction->m_hash = it->second.data();
-        else if (key == std::string("timestamp")) transaction->m_timestamp = it->second.data();
-        else if (key == std::string("total_received")) transaction->m_total_received = it->second.data();
-        else if (key == std::string("total_sent")) transaction->m_total_sent = it->second.data();
-        else if (key == std::string("fee")) transaction->m_fee = it->second.data();
-        else if (key == std::string("unlock_time")) transaction->m_unlock_time = it->second.get_value<uint64_t>();
-        else if (key == std::string("height")) transaction->m_height = it->second.get_value<uint64_t>();
-        else if (key == std::string("spent_outputs")) {
-            // deserialize monero_light_spend          
-            boost::property_tree::ptree outs = it->second;
-            for (boost::property_tree::ptree::const_iterator it2 = outs.begin(); it2 != outs.end(); ++it2) {
-              std::shared_ptr<monero_light_spend> out = std::make_shared<monero_light_spend>();
-              monero_light_spend::from_property_tree(it2->second, out);
-              transaction->m_spent_outputs->push_back(*out);
-            }
-        }
-        else if (key == std::string("payment_id")) transaction->m_payment_id = it->second.data();
-        else if (key == std::string("coinbase")) transaction->m_coinbase = it->second.get_value<bool>();
-        else if (key == std::string("mempool")) transaction->m_mempool = it->second.get_value<bool>();
-        else if (key == std::string("mixin")) transaction->m_mixin = it->second.get_value<uint32_t>();
-        else if (key == std::string("recipient")) {
-          std::shared_ptr<monero_light_address_meta> recipient = std::make_shared<monero_light_address_meta>();
-          monero_light_address_meta::from_property_tree(it->second, recipient);
-          transaction->m_recipient = *recipient;
-        }
+    for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
+      std::string key = it->first;
+
+      if (key == std::string("id")) transaction->m_id = it->second.get_value<uint64_t>();
+      else if (key == std::string("hash")) transaction->m_hash = it->second.data();
+      else if (key == std::string("timestamp")) transaction->m_timestamp = it->second.data();
+      else if (key == std::string("total_received")) transaction->m_total_received = it->second.data();
+      else if (key == std::string("total_sent")) transaction->m_total_sent = it->second.data();
+      else if (key == std::string("fee")) transaction->m_fee = it->second.data();
+      else if (key == std::string("unlock_time")) transaction->m_unlock_time = it->second.get_value<uint64_t>();
+      else if (key == std::string("height")) transaction->m_height = it->second.get_value<uint64_t>();
+      else if (key == std::string("spent_outputs")) {
+          // deserialize monero_light_spend          
+          boost::property_tree::ptree outs = it->second;
+          for (boost::property_tree::ptree::const_iterator it2 = outs.begin(); it2 != outs.end(); ++it2) {
+            std::shared_ptr<monero_light_spend> out = std::make_shared<monero_light_spend>();
+            monero_light_spend::from_property_tree(it2->second, out);
+            transaction->m_spent_outputs->push_back(*out);
+          }
+      }
+      else if (key == std::string("payment_id")) transaction->m_payment_id = it->second.data();
+      else if (key == std::string("coinbase")) transaction->m_coinbase = it->second.get_value<bool>();
+      else if (key == std::string("mempool")) transaction->m_mempool = it->second.get_value<bool>();
+      else if (key == std::string("mixin")) transaction->m_mixin = it->second.get_value<uint32_t>();
+      else if (key == std::string("recipient")) {
+        monero_light_address_meta::from_property_tree(it->second, recipient);
+      }
     }
+    
+    transaction->m_recipient = *recipient;
   }
 
   void monero_light_random_output::from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_light_random_output>& random_output) {

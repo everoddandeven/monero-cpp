@@ -1640,7 +1640,6 @@ namespace monero {
     }
 
     tx->m_in_tx_pool = relayed;
-    tx->m_is_locked = relayed;
     tx->m_is_relayed = relayed;
     tx->m_relay = config.m_relay;
     tx->m_is_confirmed = false;
@@ -1704,25 +1703,7 @@ namespace monero {
   }
 
   std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(const monero_tx_query& query) const {
-    /*
-    std::vector<std::shared_ptr<monero_tx_wallet>> result;
-
-    const auto transfers = get_transfers_aux();
-
-    for (const auto transfer : transfers) {
-      auto tx_hash = transfer->m_tx->m_hash;
-
-      auto it = std::find_if(result.begin(), result.end(), [tx_hash](const std::shared_ptr<monero_tx_wallet>& p) {
-        return p->m_hash == tx_hash;
-      });
-
-      if (it == result.end() && query.meets_criteria(transfer->m_tx.get())) result.push_back(transfer->m_tx);
-    }
-
-    return result;
-    */
-
-     MTRACE("monero_wallet_light::get_txs(query)");
+    MTRACE("monero_wallet_light::get_txs(query)");
 
     // copy query
     std::shared_ptr<monero_tx_query> query_sp = std::make_shared<monero_tx_query>(query); // convert to shared pointer
@@ -1901,13 +1882,13 @@ namespace monero {
 
         if (is_change) total_sent -= total_received;
 
-        const bool is_locked = *transaction.m_unlock_time > current_height + 1 || current_height < (*transaction.m_height) + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE;
+        const bool is_locked = *transaction.m_unlock_time > current_height || current_height < (*transaction.m_height) + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE;
         const bool is_confirmed = !transaction.m_mempool.get();
         const bool is_miner_tx = *transaction.m_coinbase == true;
               
         const uint64_t timestamp = gen_utils::timestamp_to_epoch(*transaction.m_timestamp);
         const uint64_t transaction_height = is_confirmed ? *transaction.m_height : 0;
-        const uint64_t num_confirmations = is_confirmed ? current_height - transaction_height + 1 : 0;
+        const uint64_t num_confirmations = is_confirmed ? current_height - transaction_height : 0;
         const uint64_t change_amount =  is_change ? total_received : 0;        
 
         tx->m_is_incoming = is_incoming && !is_change;
@@ -2022,7 +2003,7 @@ namespace monero {
       output->m_stealth_public_key = out.m_public_key;
       output->m_is_spent = out.is_spent();
       if (found_tx == txs.end()) {
-        auto tx = get_output_transaction(out, address_txs, current_height, blocks);
+        auto tx = get_output_transaction(out, address_txs, current_height + 1, blocks);
         output->m_tx = tx;
         txs.push_back(tx);
       }
@@ -2105,23 +2086,35 @@ namespace monero {
   }
 
   std::vector<std::shared_ptr<monero_key_image>> monero_wallet_light::export_key_images(bool all) const {
-    if (!all) throw std::runtime_error("must export all key images");
     std::vector<std::shared_ptr<monero_key_image>> key_images;
     
     const auto outputs_res = get_unspent_outs(false);
     const auto outputs = *outputs_res.m_outputs;
 
-    for(const auto &output : outputs) {
+    size_t offset = 0;
+    if (!all)
+    {
+      while (offset < outputs.size() && !m_generated_key_images.request(outputs[offset].m_tx_pub_key.get(), outputs[offset].m_index.get(), outputs[offset].m_recipient->m_maj_i.get(), outputs[offset].m_recipient->m_min_i.get()))
+        ++offset;
+    }
+    key_images.reserve(outputs.size() - offset);
+
+    for(size_t n = offset; n < outputs.size(); ++n) {
+      const auto output = &outputs[n];
       std::shared_ptr<monero_key_image> key_image = std::make_shared<monero_key_image>();
       cryptonote::subaddress_index subaddr;
-      subaddr.major = *output.m_recipient->m_maj_i;
-      subaddr.minor = *output.m_recipient->m_min_i;
+      uint32_t account_idx = *output->m_recipient->m_maj_i;
+      uint32_t subaddress_idx = *output->m_recipient->m_min_i;
+      subaddr.major = account_idx;
+      subaddr.minor = subaddress_idx;
 
-      if (output.key_image_is_known()) {
-        key_image->m_hex = output.m_key_image;
+      auto cached_key_image = m_generated_key_images.get(output->m_tx_pub_key.get(), account_idx, subaddress_idx);
+
+      if (cached_key_image != nullptr) {
+        key_image = cached_key_image;
       }
       else if (!is_view_only()) {
-        *key_image = generate_key_image(*output.m_tx_pub_key, *output.m_index, subaddr);
+        *key_image = generate_key_image(*output->m_tx_pub_key, *output->m_index, subaddr);
       }
 
       key_images.push_back(key_image);
@@ -3038,7 +3031,7 @@ namespace monero {
           outgoing_transfer->m_addresses.push_back(get_address(account_idx, subaddress_idx));
 
           //outgoing_transfer->m_account_index = account_idx;
-          if (account_idx == sender.major && subaddress_idx > 0 && std::find_if(outgoing_transfer->m_subaddress_indices.begin(), outgoing_transfer->m_subaddress_indices.end(), [subaddress_idx](const uint32_t &idx) { return subaddress_idx == idx; }) == outgoing_transfer->m_subaddress_indices.end()) {
+          if (account_idx == sender.major && std::find_if(outgoing_transfer->m_subaddress_indices.begin(), outgoing_transfer->m_subaddress_indices.end(), [subaddress_idx](const uint32_t &idx) { return subaddress_idx == idx; }) == outgoing_transfer->m_subaddress_indices.end()) {
             outgoing_transfer->m_subaddress_indices.push_back(subaddress_idx);
           }
 
@@ -3091,9 +3084,9 @@ namespace monero {
       for (const std::shared_ptr<monero_transfer>& transfer : tx_wallet->filter_transfers(*_query)) transfers.push_back(transfer);
     }
 
-    for (const std::shared_ptr<monero_tx_wallet> tx_wallet : (*m_unconfirmed_txs)) {
-      for (const std::shared_ptr<monero_transfer>& transfer : tx_wallet->filter_transfers(*_query)) transfers.push_back(transfer);
-    }
+    //for (const std::shared_ptr<monero_tx_wallet> tx_wallet : (*m_unconfirmed_txs)) {
+    //  for (const std::shared_ptr<monero_transfer>& transfer : tx_wallet->filter_transfers(*_query)) transfers.push_back(transfer);
+    //}
     
     return transfers;
   }
@@ -3522,7 +3515,9 @@ namespace monero {
         const std::string view_key = get_private_view_key();
 
         const uint64_t old_outs_amount = gen_utils::uint64_t_cast(m_unspent_outs.m_amount.get());
-
+        
+        boost::unique_lock<boost::recursive_mutex> lock(m_sync_data_mutex);
+        
         m_address_info = m_light_client->get_address_info(address, view_key);
         m_address_txs = m_light_client->get_address_txs(address, view_key);
         m_unspent_outs = m_light_client->get_unspent_outs(address, view_key, "0", 0);
@@ -3547,6 +3542,9 @@ namespace monero {
         if (m_last_block_reward != last_block_reward) m_last_block_reward = last_block_reward;
 
         if (!m_is_synced) m_is_synced = is_synced();
+
+        lock.unlock();
+
         m_wallet_listener->update_listening();  // cannot unregister during sync which would segfault
       } catch (std::exception& e) {
         m_wallet_listener->on_sync_end(); // signal end of sync to reset listener's start and end heights
@@ -4173,7 +4171,7 @@ namespace monero {
   // --------------------------- LWS UTILS --------------------------
 
   monero_light_get_address_info_response monero_wallet_light::get_address_info(bool filter_outputs) const {
-    boost::lock_guard<boost::recursive_mutex> guarg(m_sync_mutex);
+    //boost::lock_guard<boost::recursive_mutex> guarg(m_sync_mutex);
     auto result = m_address_info;
 
     monero_light_get_address_info_response res;
@@ -4224,7 +4222,7 @@ namespace monero {
   }
 
   monero_light_get_address_txs_response monero_wallet_light::get_address_txs() const {
-    boost::lock_guard<boost::recursive_mutex> guarg(m_sync_mutex);
+    boost::lock_guard<boost::recursive_mutex> guarg(m_sync_data_mutex);
     monero_light_get_address_txs_response result = m_address_txs;
     monero_light_get_address_txs_response res;
 
@@ -4311,8 +4309,7 @@ namespace monero {
   }
 
   monero_light_get_unspent_outs_response monero_wallet_light::get_unspent_outs(bool filter_spent) const {
-    std::cout << "monero_wallet_light::get_unspent_outs(" << filter_spent << ")" << std::endl;
-    boost::lock_guard<boost::recursive_mutex> guarg(m_sync_mutex);
+    boost::lock_guard<boost::recursive_mutex> guarg(m_sync_data_mutex);
     auto result = m_unspent_outs;
 
     monero_light_get_unspent_outs_response response;

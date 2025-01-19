@@ -178,6 +178,7 @@ namespace monero {
     monero_sync_result lock_and_sync(boost::optional<uint64_t> start_height = boost::none);  // internal function to synchronize request to sync and rescan
     monero_sync_result sync_aux(boost::optional<uint64_t> start_height = boost::none);       // internal function to immediately block, sync, and report progress
 
+    mutable boost::recursive_mutex m_sync_data_mutex;
     monero_light_get_address_info_response m_address_info;
     monero_light_get_address_txs_response m_address_txs;
     monero_light_get_unspent_outs_response m_unspent_outs;

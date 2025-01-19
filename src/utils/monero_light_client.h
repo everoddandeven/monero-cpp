@@ -43,12 +43,12 @@ namespace monero {
       std::string m_proxy;
       boost::optional<epee::net_utils::http::login> m_credentials;
       std::unique_ptr<epee::net_utils::http::abstract_http_client> m_http_client;
+      bool m_connected;
 
       void assert_connected() const { if (!is_connected()) throw std::runtime_error("Not connected"); };
 
       template<class t_request, class t_response>
       inline int invoke_post(const boost::string_ref uri, const t_request& request, t_response& res, std::chrono::milliseconds timeout = std::chrono::seconds(15)) const {
-        std::cout << "monero_light_client::invoke_post(): " << uri << std::endl;
         if (!m_http_client) throw std::runtime_error("http client not set");
 
         rapidjson::Document document(rapidjson::Type::kObjectType);
@@ -58,19 +58,17 @@ namespace monero {
         req.Accept(writer);
         std::string body = sb.GetString();
 
-        std::cout << "monero_light_client::invoke_post(): " << uri << ", body: " << body << std::endl;
+        //std::cout << "monero_light_client::invoke_post(): before invoke " << uri << ", body: " << body << std::endl;
 
         std::shared_ptr<epee::net_utils::http::http_response_info> _res = std::make_shared<epee::net_utils::http::http_response_info>();
         const epee::net_utils::http::http_response_info* response = _res.get();
         boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
 
-        std::cout << "monero_light_client::invoke_post(): before invoke" << std::endl;
-
         if (!m_http_client->invoke_post(uri, body, timeout, &response)) {
           throw std::runtime_error("Network error");
         }
 
-        std::cout << "monero_light_client::invoke_post(): after invoke" << std::endl;
+        //std::cout << "monero_light_client::invoke_post(): after invoke " << uri << ", body: " << body << std::endl;
 
         int status_code = response->m_response_code;
 
