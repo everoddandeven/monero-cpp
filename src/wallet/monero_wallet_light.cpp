@@ -1511,6 +1511,34 @@ namespace monero {
   }
 
   std::vector<std::string> monero_wallet_light::submit_txs(const std::string& signed_tx_hex) {
+    if (key_on_device()) throw std::runtime_error("command not supported by HW wallet");
+
+    cryptonote::blobdata blob;
+    if (!epee::string_tools::parse_hexstr_to_binbuff(signed_tx_hex, blob)) throw std::runtime_error("Failed to parse hex.");
+    
+    std::vector<tools::wallet2::pending_tx> ptx_vector;
+    
+    try {
+      ptx_vector = parse_signed_tx(blob);
+    } catch (const std::exception &e) {
+      throw std::runtime_error(std::string("Failed to parse signed tx: ") + e.what());
+    }
+
+    try {
+      std::vector<std::string> tx_hashes;
+      for (auto &ptx: ptx_vector) {
+        const auto res = m_light_client->submit_raw_tx(epee::string_tools::buff_to_hex_nodelimer(cryptonote::tx_to_blob(ptx.tx)));
+        if (!res.m_status.get()) throw std::runtime_error("Could not relay tx" + signed_tx_hex);
+        tx_hashes.push_back(epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx)));
+      }
+
+      m_wallet_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of spent funds
+      return tx_hashes;
+    } catch (const std::exception &e) {
+      throw std::runtime_error(std::string("Failed to submit signed tx: ") + e.what());
+    }
+
+    /*
     std::vector<std::string> hashes;
     
     const auto res = m_light_client->submit_raw_tx(signed_tx_hex);
@@ -1520,6 +1548,7 @@ namespace monero {
     m_wallet_listener->on_spend_tx_hashes(hashes);
 
     return hashes;
+    */
   }
 
   std::string monero_wallet_light::get_tx_key(const std::string& tx_hash) const {
@@ -1621,12 +1650,7 @@ namespace monero {
 
     monero_light_constructed_transaction constructed_tx;
 
-    if (!is_view_only()) {
-      constructed_tx = create_transaction(get_primary_address(), get_private_view_key(), get_private_spend_key(), dests, config.m_payment_id, sending_amounts, random_outs_params.m_change_amount, random_outs_params.m_using_fee, random_outs_params.m_using_outs, tied_outs.m_mix_outs, 0);
-    }
-    else {
-      throw std::runtime_error("monero_wallet_light::create_txs(): not implemented for view only wallet");
-    }
+    constructed_tx = create_transaction(dests, config.m_payment_id, sending_amounts, random_outs_params.m_change_amount, random_outs_params.m_using_fee, random_outs_params.m_using_outs, tied_outs.m_mix_outs, 0);
     
     std::shared_ptr<monero_tx_wallet> tx = std::make_shared<monero_tx_wallet>();
     
@@ -1659,6 +1683,16 @@ namespace monero {
     tx->m_prunable_hash = epee::string_tools::pod_to_hex(constructed_tx.m_tx->prunable_hash);
     tx->m_version = constructed_tx.m_tx->version;
     tx->m_full_hex = constructed_tx.m_signed_serialized_tx_string;
+
+    if (is_view_only()) {
+      unsigned_tx_hex = dump_pending_tx(constructed_tx, config.m_payment_id);
+      if (unsigned_tx_hex.empty()) {
+        throw std::runtime_error("Failed to save unsigned tx set after creation");
+      }
+    }
+    else if (is_multisig()) {
+      //multisig_tx_hex = constructed_tx.m_signed_serialized_tx_string.get();
+    }
 
     std::shared_ptr<monero_outgoing_transfer> outgoing_transfer = std::make_shared<monero_outgoing_transfer>();
 
@@ -2459,10 +2493,10 @@ namespace monero {
     m_wallet_listener = std::unique_ptr<wallet_light_listener>(new wallet_light_listener(*this));
   }
 
-  monero_light_partial_constructed_transaction monero_wallet_light::create_partial_transaction(const cryptonote::account_keys& sender_account_keys, const uint32_t subaddr_account_idx, const std::unordered_map<crypto::public_key, cryptonote::subaddress_index> &subaddresses, const std::vector<cryptonote::address_parse_info> &to_addrs, const std::vector<uint64_t>& sending_amounts, uint64_t change_amount, uint64_t fee_amount, const std::vector<monero_light_output> &outputs, std::vector<monero_light_random_outputs> &mix_outs, const std::vector<uint8_t> &extra, uint64_t unlock_time, bool rct) {
+  monero_light_partial_constructed_transaction monero_wallet_light::create_partial_transaction(const uint32_t subaddr_account_idx, const std::unordered_map<crypto::public_key, cryptonote::subaddress_index> &subaddresses, const std::vector<cryptonote::address_parse_info> &to_addrs, const std::vector<uint64_t>& sending_amounts, uint64_t change_amount, uint64_t fee_amount, const std::vector<monero_light_output> &outputs, std::vector<monero_light_random_outputs> &mix_outs, const std::vector<uint8_t> &extra, uint64_t unlock_time, bool rct) {
     std::cout << "monero_wallet_light::create_partial_transaction()" << std::endl;
     // TODO: do we need to sort destinations by amount, here, according to 'decompose_destinations'?
-    
+    const cryptonote::account_keys sender_account_keys = m_account.get_keys();
     uint32_t fake_outputs_count = get_mixin_size();
     rct::RangeProofType range_proof_type = rct::RangeProofPaddedBulletproof;
     int bp_version = 1;
@@ -2487,10 +2521,18 @@ namespace monero {
         throw std::runtime_error("not enough outputs for mixing");
       }
     }
-    if (!sender_account_keys.get_device().verify_keys(sender_account_keys.m_spend_secret_key, sender_account_keys.m_account_address.m_spend_public_key)
-      || !sender_account_keys.get_device().verify_keys(sender_account_keys.m_view_secret_key, sender_account_keys.m_account_address.m_view_public_key)) {
-      throw std::runtime_error("Invalid secret keys");
+    if (is_view_only()) {
+      if (!sender_account_keys.get_device().verify_keys(sender_account_keys.m_view_secret_key, sender_account_keys.m_account_address.m_view_public_key)) {
+        throw std::runtime_error("Invalid view keys");
+      }
     }
+    else {
+      if (!sender_account_keys.get_device().verify_keys(sender_account_keys.m_spend_secret_key, sender_account_keys.m_account_address.m_spend_public_key)
+        || !sender_account_keys.get_device().verify_keys(sender_account_keys.m_view_secret_key, sender_account_keys.m_account_address.m_view_public_key)) {
+        throw std::runtime_error("Invalid secret keys");
+      }
+    }
+
     /*
   XXX: need overflow check?
     if (sending_amount > std::numeric_limits<uint64_t>::max() - change_amount
@@ -2715,28 +2757,69 @@ namespace monero {
     result.m_additional_tx_keys = additional_tx_keys;
     result.m_spent_key_images = spent_key_images;
 
+    tools::wallet2::tx_construction_data construction_data;
+
+    std::vector<size_t> selected_transfers = get_output_indexes(outputs);
+
+    construction_data.sources = sources;
+    construction_data.change_dts = change_dst;
+    construction_data.splitted_dsts = splitted_dsts;
+    construction_data.selected_transfers = selected_transfers;
+    construction_data.extra = tx.extra;
+    construction_data.unlock_time = 0;
+    construction_data.use_rct = true;
+    construction_data.rct_config = rct_config;
+    construction_data.use_view_tags = true;
+    construction_data.dests = splitted_dsts;
+    // record which subaddress indices are being used as inputs
+    construction_data.subaddr_account = subaddr_account_idx;
+    construction_data.subaddr_indices.clear();
+    
+    for (const auto selected_out : outputs) {
+      if (selected_out.m_recipient->m_maj_i.get() != subaddr_account_idx) continue;
+      construction_data.subaddr_indices.insert(selected_out.m_recipient->m_min_i.get());
+    }
+    
+    LOG_PRINT_L2("transfer_selected_rct done");
+
+    result.m_construction_data = construction_data;
+
     return result;
   }
 
-  monero_light_constructed_transaction monero_wallet_light::create_transaction(const std::string &from_address_string, const std::string &sec_viewKey_string, const std::string &sec_spendKey_string, const std::vector<std::string> &to_address_strings, const boost::optional<std::string>& payment_id_string, const std::vector<uint64_t>& sending_amounts, uint64_t change_amount, uint64_t fee_amount, const std::vector<monero_light_output> &outputs, std::vector<monero_light_random_outputs> &mix_outs, uint64_t unlock_time) {
+  std::vector<size_t> monero_wallet_light::get_output_indexes(const std::vector<monero_light_output> &outputs) const {
+    std::vector<size_t> indexes;
+
+    const auto unspent_outs_res = get_unspent_outs(false);
+    const auto unspent_outs = unspent_outs_res.m_outputs.get();
+
+    for (const auto output : outputs) {
+      std::string public_key = output.m_public_key.get();
+      bool found = false;
+      size_t index = 0;
+
+      for (const auto unspent_out : unspent_outs) {
+        if (unspent_out.m_public_key.get() == public_key) {
+          found = true;
+          break;
+        }
+
+        index++;
+      }
+
+      if (!found) throw std::runtime_error("output doesn't belong to the wallet");
+
+      indexes.push_back(index);
+    }
+
+    return indexes;
+  }
+
+  monero_light_constructed_transaction monero_wallet_light::create_transaction(const std::vector<std::string> &to_address_strings, const boost::optional<std::string>& payment_id_string, const std::vector<uint64_t>& sending_amounts, uint64_t change_amount, uint64_t fee_amount, const std::vector<monero_light_output> &outputs, std::vector<monero_light_random_outputs> &mix_outs, uint64_t unlock_time) {
     std::cout << "monero_wallet_light::create_transaction()" << std::endl;
 
     auto nettype = get_nettype();
 
-    cryptonote::address_parse_info from_addr_info;
-    if(!cryptonote::get_account_address_from_str(from_addr_info, nettype, from_address_string)) throw std::runtime_error("couldn't parse from-address");
-    cryptonote::account_keys account_keys;
-    {
-      account_keys.m_account_address = from_addr_info.address;
-      
-      crypto::secret_key sec_viewKey;
-      if(!epee::string_tools::hex_to_pod(sec_viewKey_string, sec_viewKey)) throw std::runtime_error("couldn't parse view key");
-      account_keys.m_view_secret_key = sec_viewKey;
-      
-      crypto::secret_key sec_spendKey;
-      if(!epee::string_tools::hex_to_pod(sec_spendKey_string, sec_spendKey)) throw std::runtime_error("couldn't parse spend key");
-      account_keys.m_spend_secret_key = sec_spendKey;
-    }
     std::vector<cryptonote::address_parse_info> to_addr_infos(to_address_strings.size());
     size_t to_addr_idx = 0;
     for (const auto& addr : to_address_strings) {
@@ -2778,7 +2861,7 @@ namespace monero {
     //subaddresses[account_keys.m_account_address.m_spend_public_key] = {0,0};
     
     auto partial_tx = create_partial_transaction(
-      account_keys, subaddr_account_idx, subaddresses,
+      subaddr_account_idx, subaddresses,
       to_addr_infos,
       sending_amounts, change_amount, fee_amount,
       outputs, mix_outs,
@@ -2820,6 +2903,7 @@ namespace monero {
     
     result.m_tx_blob_byte_length = txBlob_byteLength;
     result.m_spent_key_images = partial_tx.m_spent_key_images;
+    result.m_construction_data = partial_tx.m_construction_data;
     return result;
   }
 
@@ -3834,6 +3918,96 @@ namespace monero {
     return std::make_tuple(offset, unspent_outs.size(), outs);
   }
 
+  std::vector<tools::wallet2::pending_tx> monero_wallet_light::parse_signed_tx(const std::string &signed_tx_st) const {
+    std::string s = signed_tx_st;
+    tools::wallet2::signed_tx_set signed_txs;
+
+    const size_t magiclen = strlen(SIGNED_TX_PREFIX) - 1;
+    if (strncmp(s.c_str(), SIGNED_TX_PREFIX, magiclen))
+    {
+      throw std::runtime_error("Bad magic from signed transaction");
+    }
+    s = s.substr(magiclen);
+    const char version = s[0];
+    s = s.substr(1);
+    if (version == '\003')
+    {
+      if (!m_load_deprecated_formats)
+      {
+        throw std::runtime_error("Not loading deprecated format");
+      }
+      try
+      {
+        std::istringstream iss(s);
+        boost::archive::portable_binary_iarchive ar(iss);
+        ar >> signed_txs;
+      }
+      catch (...)
+      {
+        throw std::runtime_error("Failed to parse data from signed transaction");
+      }
+    }
+    else if (version == '\004')
+    {
+      if (!m_load_deprecated_formats)
+      {
+        throw std::runtime_error("Not loading deprecated format");
+      }
+      try
+      {
+        s = decrypt_with_private_view_key(s);
+        try
+        {
+          std::istringstream iss(s);
+          boost::archive::portable_binary_iarchive ar(iss);
+          ar >> signed_txs;
+        }
+        catch (...)
+        {
+          throw std::runtime_error("Failed to parse decrypted data from signed transaction");
+        }
+      }
+      catch (const std::exception &e)
+      {
+        throw std::runtime_error(std::string("Failed to decrypt signed transaction: ") + e.what());
+      }
+    }
+    else if (version == '\005')
+    {
+      try { s = decrypt_with_private_view_key(s); }
+      catch (const std::exception &e) { throw std::runtime_error(std::string("Failed to decrypt signed transaction: ") + e.what()); }
+      try
+      {
+        binary_archive<false> ar{epee::strspan<std::uint8_t>(s)};
+        if (!::serialization::serialize(ar, signed_txs))
+        {
+          throw std::runtime_error("Failed to deserialize signed transaction");
+        }
+      }
+      catch (const std::exception &e)
+      {
+        throw std::runtime_error(std::string("Failed to decrypt signed transaction: ") + e.what());
+      }
+    }
+    else
+    {
+      throw std::runtime_error("Unsupported version in signed transaction");
+    }
+    
+    LOG_PRINT_L0("Loaded signed tx data from binary: " << signed_txs.ptx.size() << " transactions");
+    for (auto &c_ptx: signed_txs.ptx) LOG_PRINT_L0(cryptonote::obj_to_json_str(c_ptx.tx));
+
+    // import key images
+    //bool r = import_key_images(signed_txs.key_images);
+    //if (!r) return false;
+
+    // remember key images for this tx, for when we get those txes from the blockchain
+    //for (const auto &e: signed_txs.tx_key_images)
+    //  m_cold_key_images.insert(e);
+
+    return signed_txs.ptx;
+  }
+
   tools::wallet2::unsigned_tx_set monero_wallet_light::parse_unsigned_tx(const std::string &unsigned_tx_st) const
   {
     tools::wallet2::unsigned_tx_set exported_txs;
@@ -4077,6 +4251,48 @@ namespace monero {
     std::cout << "Saving signed tx data (with encryption): " << oss.str() << std::endl;
     std::string ciphertext = encrypt_with_private_view_key(oss.str());
     return std::string(SIGNED_TX_PREFIX) + ciphertext;
+  }
+
+  std::string monero_wallet_light::dump_pending_tx(const monero_light_constructed_transaction &tx, boost::optional<std::string> payment_id) const {
+    if (tx.m_construction_data == boost::none) throw std::runtime_error("could not dump tx: construction data not set");
+    tools::wallet2::unsigned_tx_set txs;
+    auto construction_data = tx.m_construction_data.get();
+
+    if (payment_id != boost::none && !payment_id->empty()) {
+      crypto::hash8 _payment_id;
+
+      if (!monero_utils::parse_short_payment_id(payment_id.get(), _payment_id)) throw std::runtime_error("invalid short payment id: " + payment_id.get());
+      cryptonote::remove_field_from_tx_extra(construction_data.extra, typeid(cryptonote::tx_extra_nonce));
+      std::string extra_nonce;
+      cryptonote::set_encrypted_payment_id_to_tx_extra_nonce(extra_nonce, _payment_id);
+      if(!cryptonote::add_extra_nonce_to_tx_extra(construction_data.extra, extra_nonce)) throw std::runtime_error("Failed to add decrypted payment id to tx extra");
+      LOG_PRINT_L0("Successfully decrypted payment ID: " << payment_id.get());
+    }
+    else {
+      LOG_PRINT_L0("Payment ID not set");
+    }
+
+    //txs.txes.push_back(get_construction_data_with_decrypted_short_payment_id(tx, m_account.get_device()));
+    txs.txes.push_back(construction_data);
+    
+    txs.new_transfers = export_outputs(false, 0);
+    // save as binary
+    std::ostringstream oss;
+    binary_archive<true> ar(oss);
+    try
+    {
+      if (!::serialization::serialize(ar, txs))
+        return std::string();
+    }
+    catch (...)
+    {
+      return std::string();
+    }
+    
+    LOG_PRINT_L0("Saving unsigned tx data: " << oss.str());
+    
+    std::string ciphertext = encrypt_with_private_view_key(oss.str());
+    return epee::string_tools::buff_to_hex_nodelimer(std::string(UNSIGNED_TX_PREFIX) + ciphertext);
   }
 
   bool monero_wallet_light::get_tx_key_cached(const crypto::hash &txid, crypto::secret_key &tx_key, std::vector<crypto::secret_key> &additional_tx_keys) const

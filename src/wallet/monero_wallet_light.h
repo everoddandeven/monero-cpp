@@ -1,6 +1,5 @@
 
 #include "monero_wallet_keys.h"
-#include "wallet/wallet2.h"
 #include "utils/monero_light_client.h"
 #include "utils/monero_utils.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
@@ -283,7 +282,7 @@ namespace monero {
       */
     uint64_t estimated_tx_network_fee(uint64_t fee_per_b, uint32_t priority);
 
-    std::tuple<uint64_t, uint64_t, std::vector<tools::wallet2::exported_transfer_details>> export_outputs(bool all, uint32_t start, uint32_t count) const;
+    std::tuple<uint64_t, uint64_t, std::vector<tools::wallet2::exported_transfer_details>> export_outputs(bool all, uint32_t start, uint32_t count = 0xffffffff) const;
 
     bool output_is_spent(monero_light_output &output) const;
     bool output_is_spent(monero_light_spend &spend) const;
@@ -300,14 +299,15 @@ namespace monero {
     std::vector<std::shared_ptr<monero_transfer>> get_transfers_aux(const monero_transfer_query& query) const;
     std::vector<std::shared_ptr<monero_transfer>> get_transfers_aux() const { return get_transfers_aux(monero_transfer_query()); };
     std::vector<std::shared_ptr<monero_output_wallet>> get_outputs_aux(const monero_output_query& query) const;
+    std::vector<size_t> get_output_indexes(const std::vector<monero_light_output> &outputs) const;
     bool is_output_frozen(const monero_light_output& output) const;
 
     /**
       * 
       * @param sender_account_keys this will reference a particular hw::device
       */
-    monero_light_partial_constructed_transaction create_partial_transaction(const cryptonote::account_keys& sender_account_keys, const uint32_t subaddr_account_idx, const std::unordered_map<crypto::public_key, cryptonote::subaddress_index> &subaddresses, const std::vector<cryptonote::address_parse_info> &to_addrs, const std::vector<uint64_t>& sending_amounts, uint64_t change_amount, uint64_t fee_amount, const std::vector<monero_light_output> &outputs, std::vector<monero_light_random_outputs> &mix_outs, const std::vector<uint8_t> &extra, uint64_t unlock_time, bool rct);
-    monero_light_constructed_transaction create_transaction(const std::string &from_address_string, const std::string &sec_viewKey_string, const std::string &sec_spendKey_string, const std::vector<std::string> &to_address_strings, const boost::optional<std::string>& payment_id_string, const std::vector<uint64_t>& sending_amounts, uint64_t change_amount, uint64_t fee_amount, const std::vector<monero_light_output> &outputs, std::vector<monero_light_random_outputs> &mix_outs, uint64_t unlock_time);
+    monero_light_partial_constructed_transaction create_partial_transaction(const uint32_t subaddr_account_idx, const std::unordered_map<crypto::public_key, cryptonote::subaddress_index> &subaddresses, const std::vector<cryptonote::address_parse_info> &to_addrs, const std::vector<uint64_t>& sending_amounts, uint64_t change_amount, uint64_t fee_amount, const std::vector<monero_light_output> &outputs, std::vector<monero_light_random_outputs> &mix_outs, const std::vector<uint8_t> &extra, uint64_t unlock_time, bool rct);
+    monero_light_constructed_transaction create_transaction(const std::vector<std::string> &to_address_strings, const boost::optional<std::string>& payment_id_string, const std::vector<uint64_t>& sending_amounts, uint64_t change_amount, uint64_t fee_amount, const std::vector<monero_light_output> &outputs, std::vector<monero_light_random_outputs> &mix_outs, uint64_t unlock_time);
 
     boost::optional<std::string> get_subaddress_label(uint32_t account_idx, uint32_t subaddress_idx) const;
 
@@ -318,7 +318,9 @@ namespace monero {
     void set_tx_note(const crypto::hash &txid, const std::string &note);
     std::string get_tx_note(const crypto::hash &txid) const;
     std::unordered_map<crypto::public_key, cryptonote::subaddress_index> get_subaddresses_map() const;
+    std::vector<tools::wallet2::pending_tx> parse_signed_tx(const std::string &signed_tx_st) const;
     tools::wallet2::unsigned_tx_set parse_unsigned_tx(const std::string &unsigned_tx_st) const;
+    std::string dump_pending_tx(const monero_light_constructed_transaction &tx, boost::optional<std::string> payment_id) const;
     std::string sign_tx(tools::wallet2::unsigned_tx_set &exported_txs, std::vector<tools::wallet2::pending_tx> &txs, tools::wallet2::signed_tx_set &signed_txes);
     bool get_tx_key_cached(const crypto::hash &txid, crypto::secret_key &tx_key, std::vector<crypto::secret_key> &additional_tx_keys) const;
     bool get_tx_key(const crypto::hash &txid, crypto::secret_key &tx_key, std::vector<crypto::secret_key> &additional_tx_keys) const;

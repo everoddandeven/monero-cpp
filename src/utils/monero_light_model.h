@@ -54,6 +54,7 @@
 
 #include "daemon/monero_daemon_model.h"
 #include "cryptonote_basic/cryptonote_basic.h"
+#include "wallet/wallet2.h"
 #include <map>
 
 using namespace monero;
@@ -189,7 +190,8 @@ namespace monero {
     boost::optional<cryptonote::transaction> m_tx;
     boost::optional<crypto::secret_key> m_tx_key;
     boost::optional<std::vector<crypto::secret_key>> m_additional_tx_keys;
-  boost::optional<std::vector<std::string>> m_spent_key_images;
+    boost::optional<std::vector<std::string>> m_spent_key_images;
+    boost::optional<tools::wallet2::tx_construction_data> m_construction_data;
   };
 
   struct monero_light_constructed_transaction
@@ -200,7 +202,8 @@ namespace monero {
     boost::optional<std::string> m_tx_pub_key_string; // from get_tx_pub_key_from_extra()
     boost::optional<cryptonote::transaction> m_tx; // for block weight
     boost::optional<size_t> m_tx_blob_byte_length;
-  boost::optional<std::vector<std::string>> m_spent_key_images;
+    boost::optional<std::vector<std::string>> m_spent_key_images;
+    boost::optional<tools::wallet2::tx_construction_data> m_construction_data;
   };
 
   typedef std::unordered_map<std::string/*public_key*/, std::vector<monero_light_random_output>> monero_light_spendable_random_outputs;
