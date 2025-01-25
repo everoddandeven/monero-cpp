@@ -192,6 +192,8 @@ namespace monero {
     boost::optional<std::vector<crypto::secret_key>> m_additional_tx_keys;
     boost::optional<std::vector<std::string>> m_spent_key_images;
     boost::optional<tools::wallet2::tx_construction_data> m_construction_data;
+    boost::optional<uint64_t> m_fee;
+    boost::optional<uint64_t> m_weight;
   };
 
   struct monero_light_constructed_transaction
@@ -204,6 +206,8 @@ namespace monero {
     boost::optional<size_t> m_tx_blob_byte_length;
     boost::optional<std::vector<std::string>> m_spent_key_images;
     boost::optional<tools::wallet2::tx_construction_data> m_construction_data;
+    boost::optional<uint64_t> m_fee;
+    boost::optional<uint64_t> m_weight;
   };
 
   typedef std::unordered_map<std::string/*public_key*/, std::vector<monero_light_random_output>> monero_light_spendable_random_outputs;
