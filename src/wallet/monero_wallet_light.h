@@ -195,6 +195,7 @@ namespace monero {
     serializable_unordered_map<crypto::hash, std::vector<crypto::secret_key>> m_additional_tx_keys;
 
     std::unique_ptr<std::vector<std::shared_ptr<monero_tx_wallet>>> m_unconfirmed_txs;
+    std::unique_ptr<std::vector<std::string>> m_key_images_in_pool;
 
     bool m_load_deprecated_formats;
 

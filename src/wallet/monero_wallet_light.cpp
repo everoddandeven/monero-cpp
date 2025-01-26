@@ -774,7 +774,7 @@ namespace monero {
 
     // we expect to have a set of mix outs for every output in the tx
     if (mix_outs.size() != using_outs.size()) {
-      throw std::runtime_error("not enough usable decoys found");
+      throw std::runtime_error("not enough usable decoys found: " + std::to_string(mix_outs.size()));
     }
 
     // we expect to use up all mix outs returned by the server
@@ -1682,7 +1682,7 @@ namespace monero {
 
     const auto unspent_outs = *unspent_outs_res.m_outputs;
 
-    std::cout << "Got spendable outs: " << unspent_outs.size() << std::endl;
+    std::cout << "Got spendable outs: " << unspent_outs.size() << ", total: " << unspent_outs_res.m_amount.get() << ", requested: " << amount << std::endl;
 
     if (unspent_outs.empty()) throw std::runtime_error("not enough unlocked money");
 
@@ -1697,6 +1697,7 @@ namespace monero {
     const auto random_outs_params = prepare_get_random_outs_params(payment_id, sending_amounts, is_sweeping, simple_priority, unspent_outs, fee_per_b, fee_mask, m_prior_attempt_size_calcd_fee, m_prior_attempt_unspent_outs_to_mix_outs);
 
     if(random_outs_params.m_using_outs.size() == 0) throw std::runtime_error("Expected non-0 using_outs");
+    std::cout << "random_outs_params.m_using_outs: " << random_outs_params.m_using_outs.size() << std::endl;
 
     const auto random_outs_res = get_random_outs(random_outs_params.m_using_outs);
 
@@ -1738,7 +1739,10 @@ namespace monero {
     tx->m_ring_size = monero_utils::RING_SIZE;
     tx->m_unlock_time = 0;
     tx->m_is_locked = true;
-    if (relayed) tx->m_last_relayed_timestamp = static_cast<uint64_t>(time(NULL));
+    if (relayed) {
+      tx->m_last_relayed_timestamp = static_cast<uint64_t>(time(NULL));
+      tx->m_is_double_spend_seen = false;
+    }
     tx->m_key = constructed_tx.m_tx_key_string;
     tx->m_unlock_time = constructed_tx.m_tx->unlock_time;
     tx->m_extra = constructed_tx.m_tx->extra;
@@ -1780,6 +1784,8 @@ namespace monero {
       tx->m_inputs.push_back(input);
       input->m_key_image = std::make_shared<monero_key_image>();
       input->m_key_image.get()->m_hex = input_key_image;
+
+      m_key_images_in_pool->push_back(input_key_image);
     }
 
     result.push_back(tx);
@@ -2028,7 +2034,7 @@ namespace monero {
         tx->m_hash = *transaction.m_hash;
         tx->m_num_confirmations = num_confirmations;
         tx->m_fee = fee;
-        if (!is_change) tx->m_payment_id = transaction.m_payment_id;
+        if (!is_change && transaction.m_payment_id != boost::none && transaction.m_payment_id.get() != monero_tx::DEFAULT_PAYMENT_ID) tx->m_payment_id = transaction.m_payment_id;
         //tx->m_num_dummy_outputs = transaction.m_mixin;
         //tx->m_ring_size = *transaction.m_mixin + 1;
         //tx->m_change_amount = change_amount;
@@ -2550,6 +2556,7 @@ namespace monero {
     m_last_block_reward = 0;
 
     m_unconfirmed_txs = std::make_unique<std::vector<std::shared_ptr<monero_tx_wallet>>>();
+    m_key_images_in_pool = std::make_unique<std::vector<std::string>>();
 
     m_address_info.m_locked_funds = "0";
     m_address_info.m_total_received = "0";
@@ -3082,7 +3089,7 @@ namespace monero {
       uint64_t input_sum = 0;
       uint64_t output_sum = 0;
       std::string tx_hash = *tx.m_hash;
-
+      std::shared_ptr<monero_block> block = nullptr;
       std::shared_ptr<monero_tx_wallet> tx_wallet = std::make_shared<monero_tx_wallet>();
 
       tx_wallet->m_is_incoming = is_incoming && !is_change;
@@ -3116,8 +3123,6 @@ namespace monero {
         auto it = std::find_if(blocks.begin(), blocks.end(), [tx_height](const std::shared_ptr<monero_block>& p) {
           return *p->m_height == tx_height; // Dereferenziamento del unique_ptr
         });
-
-        std::shared_ptr<monero_block> block = nullptr;
 
         if (it != blocks.end()) {
           block = (*it);  
@@ -3253,17 +3258,25 @@ namespace monero {
           //if (monero_utils::is_contextual(*_query)) tx_wallet->m_inputs.push_back(output);
         }
 
+        sort(outgoing_transfer->m_subaddress_indices.begin(), outgoing_transfer->m_subaddress_indices.end());
+
         tx_wallet->m_outgoing_transfer = outgoing_transfer;
 
         //transfers.push_back(outgoing_transfer);
       }
 
-      if ((tx_wallet->m_is_incoming.get()) || (tx_wallet->m_is_incoming.get() && tx_wallet->m_is_outgoing.get())) tx_wallet->m_payment_id = tx.m_payment_id;
+      if ((tx_wallet->m_is_incoming.get()) || (tx_wallet->m_is_incoming.get() && tx_wallet->m_is_outgoing.get())) {
+        if (tx.m_payment_id != boost::none && tx.m_payment_id.get() != monero_tx::DEFAULT_PAYMENT_ID) tx_wallet->m_payment_id = tx.m_payment_id;
+      }
 
       sort(tx_wallet->m_incoming_transfers.begin(), tx_wallet->m_incoming_transfers.end(), monero_utils::incoming_transfer_before);
 
       //tx_wallet->m_input_sum = input_sum;
       //tx_wallet->m_output_sum = output_sum;
+
+      if (is_confirmed && block != nullptr && !tx_query->meets_criteria(tx_wallet.get())) {
+        block->m_txs.erase(std::remove(block->m_txs.begin(), block->m_txs.end(), tx_wallet), block->m_txs.end());
+      }
 
       for (const std::shared_ptr<monero_transfer>& transfer : tx_wallet->filter_transfers(*_query)) transfers.push_back(transfer);
     }
@@ -3483,6 +3496,13 @@ namespace monero {
 
     //const auto unconfirmed_txs = m_unconfirmed_txs;
 
+    const auto found = std::find_if(m_key_images_in_pool->begin(), m_key_images_in_pool->end(), [key_image](const std::string& kip){
+      return key_image == kip;
+    });
+
+    return found != m_key_images_in_pool->end();
+
+    /*
     for (const auto unconfirmed_tx : (*m_unconfirmed_txs)) {
       if (!unconfirmed_tx->m_is_outgoing.get() || unconfirmed_tx->m_inputs.empty()) continue;
       const auto inputs = unconfirmed_tx->m_inputs;
@@ -3495,6 +3515,8 @@ namespace monero {
         }
       }
     }
+
+    */
 
     return false;
   }
@@ -4488,6 +4510,37 @@ namespace monero {
   }
 
   void monero_wallet_light::remove_unconfirmed_tx(const std::string &hash) const {
+    const auto found = std::find_if(m_unconfirmed_txs->begin(), m_unconfirmed_txs->end(),[&hash](const std::shared_ptr<monero_tx_wallet>& ptr) {
+      return ptr->m_hash != boost::none && ptr->m_hash.get() == hash;
+    });
+
+    std::vector<std::string> key_images_to_remove;
+
+    if (found != m_unconfirmed_txs->end()) {
+      auto unconfirmed_tx = (*found);
+      auto inputs = unconfirmed_tx->m_inputs;
+
+      std::cout << "removing key images from " << inputs.size() << " inputs" << std::endl;
+
+      for (auto &_input : inputs) {
+        std::shared_ptr<monero_output_wallet> input = std::dynamic_pointer_cast<monero_output_wallet>(_input);
+
+        if (input == nullptr) {
+          std::cout << "could not dynamic cast monero_output* to monero_output_wallet*" << std::endl;
+          continue;
+        }
+        if (input->m_key_image == boost::none) {
+          std::cout << "input has no key image" << std::endl;
+          continue;
+        }
+        auto hex = input->m_key_image.get()->m_hex;
+        if (hex == boost::none) throw std::runtime_error("key image without hex");
+        key_images_to_remove.push_back(hex.get());
+      }
+    }
+
+    std::unordered_set<std::string> ki_to_remove(key_images_to_remove.begin(), key_images_to_remove.end());
+
     m_unconfirmed_txs->erase(
       std::remove_if(
           m_unconfirmed_txs->begin(),
@@ -4496,6 +4549,12 @@ namespace monero {
               return ptr->m_hash != boost::none && ptr->m_hash.get() == hash;
           }
       ), m_unconfirmed_txs->end());
+    
+    m_key_images_in_pool->erase(std::remove_if(m_key_images_in_pool->begin(), m_key_images_in_pool->end(),
+    [&ki_to_remove](const std::string& ki) {
+        return ki_to_remove.count(ki) > 0;
+    }),
+    m_key_images_in_pool->end());
   }
 
   // --------------------------- LWS UTILS --------------------------
@@ -4602,7 +4661,7 @@ namespace monero {
   }
 
   monero_light_get_unspent_outs_response monero_wallet_light::get_unspent_outs(std::string amount, uint32_t mixin, bool use_dust, std::string dust_threshold, bool filter_spent) const {
-    auto result = m_light_client->get_unspent_outs(get_primary_address(), get_private_view_key(), amount, mixin == 0 ? get_mixin_size() : mixin, use_dust, dust_threshold);
+    auto result = m_light_client->get_unspent_outs(get_primary_address(), get_private_view_key(), amount, mixin, use_dust, dust_threshold);
 
     monero_light_get_unspent_outs_response response;
 
@@ -4675,26 +4734,40 @@ namespace monero {
     monero_light_get_unspent_outs_response result;
     auto outputs = res.m_outputs.get();
 
+    uint64_t _amount = gen_utils::uint64_t_cast(res.m_amount.get());
     result.m_fee_mask = res.m_fee_mask;
     result.m_per_byte_fee = res.m_per_byte_fee;
     result.m_outputs = std::vector<monero_light_output>();
 
     for (auto &out : outputs) {
       const uint64_t out_height = out.m_height.get();
+      const uint64_t out_amount = gen_utils::uint64_t_cast(out.m_amount.get());
 
       if (height < out_height + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE) {
+        if (_amount < out_amount) throw std::runtime_error("spendable amount is negative");
+        _amount -= out_amount;
         continue;
       }
 
-      if (is_output_frozen(out)) continue;
+      if (is_output_frozen(out)) {
+        if (_amount < out_amount) throw std::runtime_error("spendable amount is negative");
+        _amount -= out_amount;
+        continue;
+      }
 
       const uint64_t unlock_time = get_output_num_blocks_to_unlock(out);
       if (unlock_time > 0) {
+        if (_amount < out_amount) throw std::runtime_error("spendable amount is negative");
+        _amount -= out_amount;
         continue;
       }
 
       result.m_outputs->push_back(out);
     }
+
+    result.m_amount = std::to_string(_amount);
+
+    if (_amount < amount) std::cout << "monero_wallet_light::get_spendable_outs(): got less than requested amount" << std::endl;
 
     return result;
   }
@@ -4735,6 +4808,7 @@ namespace monero {
         std::ostringstream amount_ss;
         amount_ss << using_out.m_amount;
         decoy_req__amounts.push_back(amount_ss.str());
+        std::cout << "pushing decoy req amount: " << amount_ss.str() << std::endl;
       }
     }
 
