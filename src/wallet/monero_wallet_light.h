@@ -315,6 +315,7 @@ namespace monero {
     std::string make_uri(const std::string &address, const std::string &payment_id, uint64_t amount, const std::string &tx_description, const std::string &recipient_name, std::string &error) const;
     bool parse_uri(const std::string &uri, std::string &address, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error) const;
 
+    std::vector<monero_subaddress> get_subaddresses_aux(const uint32_t account_idx, const std::vector<uint32_t>& subaddress_indices) const;
     std::vector<monero_subaddress> get_subaddresses() const;
     void set_tx_note(const crypto::hash &txid, const std::string &note);
     std::string get_tx_note(const crypto::hash &txid) const;
@@ -327,6 +328,8 @@ namespace monero {
     bool get_tx_key(const crypto::hash &txid, crypto::secret_key &tx_key, std::vector<crypto::secret_key> &additional_tx_keys) const;
 
     void remove_unconfirmed_tx(const std::string &hash) const;
+    bool destination_is_ours(const std::shared_ptr<monero_destination> &dest) const;
+    uint64_t get_tx_balance(const std::shared_ptr<monero_tx_wallet> &tx) const;
 };
 
 }

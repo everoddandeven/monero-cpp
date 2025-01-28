@@ -995,11 +995,21 @@ namespace monero {
 
   monero_subaddress monero_wallet_light::get_address_index(const std::string& address) const {
     if (!monero_utils::is_valid_address(address, m_network_type)) throw std::runtime_error("Invalid address");
+
+    std::string _address;
+
+    try {
+      auto integrated_address = decode_integrated_address(address);
+      _address = integrated_address.m_standard_address;
+    }
+    catch (...) {
+      _address = address;
+    }
     
     auto subaddresses = get_subaddresses();
 
     for (auto subaddress : subaddresses) {
-      if (address == *subaddress.m_address) {
+      if (_address == *subaddress.m_address) {
         return subaddress;
       }
     }
@@ -1037,7 +1047,7 @@ namespace monero {
     }
 
     for (const auto &unconfirmed_tx : (*m_unconfirmed_txs)) {
-      balance += unconfirmed_tx->m_change_amount.get();
+      balance += get_tx_balance(unconfirmed_tx);
     }
 
     return balance;
@@ -1056,7 +1066,7 @@ namespace monero {
 
     if (account_index == 0) {
       for (const auto &unconfirmed_tx : (*m_unconfirmed_txs)) {
-        balance += unconfirmed_tx->m_change_amount.get();
+        balance += get_tx_balance(unconfirmed_tx);
       }
     }
 
@@ -1076,7 +1086,7 @@ namespace monero {
 
     if (account_idx == 0 && subaddress_idx == 0) {
       for (const auto &unconfirmed_tx : (*m_unconfirmed_txs)) {
-        balance += unconfirmed_tx->m_change_amount.get();
+        balance += get_tx_balance(unconfirmed_tx);
       }
     }
 
@@ -1223,7 +1233,7 @@ namespace monero {
     return account;
   }
 
-  std::vector<monero_subaddress> monero_wallet_light::get_subaddresses(const uint32_t account_idx, const std::vector<uint32_t>& subaddress_indices) const {
+  std::vector<monero_subaddress> monero_wallet_light::get_subaddresses_aux(const uint32_t account_idx, const std::vector<uint32_t>& subaddress_indices) const {
     // must provide subaddress indices
     std::vector<uint32_t> subaddress_idxs;
 
@@ -1247,8 +1257,12 @@ namespace monero {
     }
 
     // initialize subaddresses at indices
-    std::vector<monero_subaddress> subaddresses = monero_wallet_keys::get_subaddresses(account_idx, subaddress_idxs);
-    
+    return monero_wallet_keys::get_subaddresses(account_idx, subaddress_idxs);
+  }
+
+  std::vector<monero_subaddress> monero_wallet_light::get_subaddresses(const uint32_t account_idx, const std::vector<uint32_t>& subaddress_indices) const {
+    std::vector<monero_subaddress> subaddresses = get_subaddresses_aux(account_idx, subaddress_indices);
+
     for (auto &subaddress : subaddresses) {
       subaddress.m_label = get_subaddress_label(account_idx, *subaddress.m_index);
       subaddress.m_balance = get_balance(account_idx, *subaddress.m_index);
@@ -1856,10 +1870,6 @@ namespace monero {
     // copy query
     std::shared_ptr<monero_tx_query> query_sp = std::make_shared<monero_tx_query>(query); // convert to shared pointer
     std::shared_ptr<monero_tx_query> _query = query_sp->copy(query_sp, std::make_shared<monero_tx_query>()); // deep copy
-
-//    // log query
-//    if (_query->m_block != boost::none) std::cout << "Tx query's rooted at [block]: " << _query->m_block.get()->serialize() << std::endl;
-//    else std::cout << "Tx _query: " << _query->serialize() << std::endl;
 
     // temporarily disable transfer and output queries in order to collect all tx context
     boost::optional<std::shared_ptr<monero_transfer_query>> transfer_query = _query->m_transfer_query;
@@ -3708,6 +3718,31 @@ namespace monero {
     
   }
 
+  bool monero_wallet_light::destination_is_ours(const std::shared_ptr<monero_destination> &dest) const {
+    try {
+      get_address_index(dest->m_address.get());
+      return true;
+    }
+    catch (...) {
+      return false;
+    }
+  }
+
+  uint64_t monero_wallet_light::get_tx_balance(const std::shared_ptr<monero_tx_wallet> &tx) const {
+    uint64_t balance = 0;
+
+    if (tx->m_change_amount != boost::none) balance = tx->m_change_amount.get();
+    if (tx->m_outgoing_transfer != boost::none) {
+      for (const auto &dest : (*tx->m_outgoing_transfer)->m_destinations) {
+        if (destination_is_ours(dest)) {
+          balance += dest->m_amount.get();
+        }
+      }
+    }
+
+    return balance;
+  }
+
   void monero_wallet_light::run_sync_loop() {
     if (m_sync_loop_running) return;  // only run one loop at a time
     m_sync_loop_running = true;
@@ -3971,12 +4006,12 @@ namespace monero {
           auto subaddresses = monero_wallet_keys::get_subaddresses(kv.first, index_range.to_subaddress_indices());
 
           for (auto subaddress : subaddresses) {
-            subaddress.m_balance = get_balance(kv.first, *subaddress.m_index);
-            subaddress.m_unlocked_balance = get_unlocked_balance(kv.first, *subaddress.m_index);
-            subaddress.m_label = get_subaddress_label(kv.first, *subaddress.m_index);
-            subaddress.m_num_unspent_outputs = get_subaddress_num_unspent_outs(kv.first, *subaddress.m_index);
-            subaddress.m_is_used = subaddress_is_used(kv.first, *subaddress.m_index);
-            subaddress.m_num_blocks_to_unlock = get_subaddress_num_blocks_to_unlock(kv.first, *subaddress.m_index);
+            //subaddress.m_balance = get_balance(kv.first, *subaddress.m_index);
+            //subaddress.m_unlocked_balance = get_unlocked_balance(kv.first, *subaddress.m_index);
+            //subaddress.m_label = get_subaddress_label(kv.first, *subaddress.m_index);
+            //subaddress.m_num_unspent_outputs = get_subaddress_num_unspent_outs(kv.first, *subaddress.m_index);
+            //subaddress.m_is_used = subaddress_is_used(kv.first, *subaddress.m_index);
+            //subaddress.m_num_blocks_to_unlock = get_subaddress_num_blocks_to_unlock(kv.first, *subaddress.m_index);
 
             result.push_back(subaddress);
           }
