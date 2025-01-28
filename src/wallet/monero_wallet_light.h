@@ -208,7 +208,7 @@ namespace monero {
     monero_light_get_unspent_outs_response get_unspent_outs(bool filter_spent) const;
     monero_light_get_unspent_outs_response get_unspent_outs(uint64_t amount, uint32_t mixin = 0, bool use_dust = true, uint64_t dust_threshold = 0, bool filter_spent = true) const;
     monero_light_get_unspent_outs_response get_unspent_outs(std::string amount = "0", uint32_t mixin = 0, bool use_dust = true, std::string dust_threshold = "0", bool filter_spent = true) const;
-    monero_light_get_unspent_outs_response get_spendable_outs(uint64_t amount, uint32_t mixin = 0, bool use_dust = true, uint64_t dust_threshold = 0, bool filter_spent = true) const;
+    monero_light_get_unspent_outs_response get_spendable_outs(const uint32_t account_idx, const std::vector<uint32_t> &subaddresses_indices, uint64_t amount, uint32_t mixin = 0, bool use_dust = true, uint64_t dust_threshold = 0, bool filter_spent = true) const;
     monero_light_get_random_outs_response get_random_outs(uint32_t count, std::vector<uint64_t> &amounts) const;
     monero_light_get_random_outs_response get_random_outs(uint32_t count, std::vector<std::string> &amounts) const;
     monero_light_get_random_outs_response get_random_outs(const std::vector<monero_light_output> &outputs) const;
@@ -308,7 +308,7 @@ namespace monero {
       * @param sender_account_keys this will reference a particular hw::device
       */
     monero_light_partial_constructed_transaction create_partial_transaction(const uint32_t subaddr_account_idx, const std::unordered_map<crypto::public_key, cryptonote::subaddress_index> &subaddresses, const std::vector<cryptonote::address_parse_info> &to_addrs, const std::vector<uint64_t>& sending_amounts, uint64_t change_amount, uint64_t fee_amount, const std::vector<monero_light_output> &outputs, std::vector<monero_light_random_outputs> &mix_outs, const std::vector<uint8_t> &extra, uint64_t unlock_time, bool rct);
-    monero_light_constructed_transaction create_transaction(const std::vector<std::string> &to_address_strings, const boost::optional<std::string>& payment_id_string, const std::vector<uint64_t>& sending_amounts, uint64_t change_amount, uint64_t fee_amount, const std::vector<monero_light_output> &outputs, std::vector<monero_light_random_outputs> &mix_outs, uint64_t unlock_time);
+    monero_light_constructed_transaction create_transaction(const uint32_t subaddr_account_idx, const std::vector<std::string> &to_address_strings, const boost::optional<std::string>& payment_id_string, const std::vector<uint64_t>& sending_amounts, uint64_t change_amount, uint64_t fee_amount, const std::vector<monero_light_output> &outputs, std::vector<monero_light_random_outputs> &mix_outs, uint64_t unlock_time);
 
     boost::optional<std::string> get_subaddress_label(uint32_t account_idx, uint32_t subaddress_idx) const;
 
