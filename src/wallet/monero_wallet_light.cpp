@@ -5039,7 +5039,7 @@ namespace monero {
     if (config.m_seed_offset != boost::none && !config.m_seed_offset.get().empty()) spend_key_sk = cryptonote::decrypt_key(spend_key_sk, config.m_seed_offset.get());
 
     // initialize wallet account
-    monero_wallet_light* wallet = new monero_wallet_light(http_client_factory);
+    monero_wallet_light* wallet = new monero_wallet_light(std::move(http_client_factory));
     wallet->m_account = cryptonote::account_base{};
     wallet->m_account.generate(spend_key_sk, true, false);
 
@@ -5121,7 +5121,7 @@ namespace monero {
     }
         
     // initialize wallet account
-    monero_wallet_light* wallet = new monero_wallet_light(http_client_factory);
+    monero_wallet_light* wallet = new monero_wallet_light(std::move(http_client_factory));
     if (has_spend_key && has_view_key) {
       wallet->m_account.create_from_keys(address_info.address, spend_key_sk, view_key_sk);
     } else if (has_spend_key) {
@@ -5163,7 +5163,7 @@ namespace monero {
     if (!monero_utils::is_valid_language(config_normalized.m_language.get())) throw std::runtime_error("Unknown language: " + config_normalized.m_language.get());
 
     // initialize random wallet account
-    monero_wallet_light* wallet = new monero_wallet_light(http_client_factory);
+    monero_wallet_light* wallet = new monero_wallet_light(std::move(http_client_factory));
     crypto::secret_key spend_key_sk = wallet->m_account.generate();
 
     // initialize remaining wallet

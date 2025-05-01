@@ -323,7 +323,6 @@ if (BUILD_LIBRARY)
       ringct
       ringct_basic
       common
-      cncrypto
       blockchain_db
       blocks
       checkpoints
@@ -331,6 +330,7 @@ if (BUILD_LIBRARY)
       device_trezor
       multisig
       version
+      cncrypto
       randomx
       epee
       hardforks
@@ -419,7 +419,6 @@ if (BUILD_SAMPLE)
       ringct
       ringct_basic
       common
-      cncrypto
       blockchain_db
       blocks
       checkpoints
@@ -427,6 +426,7 @@ if (BUILD_SAMPLE)
       device_trezor
       multisig
       version
+      cncrypto
       randomx
       epee
       hardforks
@@ -491,7 +491,6 @@ if (BUILD_SCRATCHPAD)
       ringct
       ringct_basic
       common
-      cncrypto
       blockchain_db
       blocks
       checkpoints
@@ -499,6 +498,7 @@ if (BUILD_SCRATCHPAD)
       device_trezor
       multisig
       version
+      cncrypto
       randomx
       epee
       hardforks
@@ -563,7 +563,6 @@ if (BUILD_TESTS)
       ringct
       ringct_basic
       common
-      cncrypto
       blockchain_db
       blocks
       checkpoints
@@ -571,6 +570,7 @@ if (BUILD_TESTS)
       device_trezor
       multisig
       version
+      cncrypto
       randomx
       epee
       hardforks
@@ -637,7 +637,6 @@ if (BUILD_LIGHT_TESTS)
       ringct
       ringct_basic
       common
-      cncrypto
       blockchain_db
       blocks
       checkpoints
@@ -645,6 +644,7 @@ if (BUILD_LIGHT_TESTS)
       device_trezor
       multisig
       version
+      cncrypto
       randomx
       epee
       hardforks
