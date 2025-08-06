@@ -350,7 +350,7 @@ namespace monero {
   };
 
   struct monero_light_submit_raw_tx_response {
-  boost::optional<bool> m_status;
+  boost::optional<std::string> m_status;
   
   static std::shared_ptr<monero_light_submit_raw_tx_response> deserialize(const std::string& config_json);
   };

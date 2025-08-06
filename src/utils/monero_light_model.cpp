@@ -454,7 +454,7 @@ namespace monero {
     for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
         std::string key = it->first;
 
-        if (key == std::string("status")) tx->m_status = it->second.get_value<bool>();
+        if (key == std::string("status")) tx->m_status = it->second.data();
     }
 
     return tx;

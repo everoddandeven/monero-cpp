@@ -199,6 +199,11 @@ namespace monero {
 
     bool m_load_deprecated_formats;
 
+    // balance cache
+    uint64_t m_wallet_balance = 0;
+    serializable_unordered_map<uint32_t, uint64_t> m_account_balance_container;
+    serializable_unordered_map<uint32_t, serializable_unordered_map<uint32_t, uint64_t>> m_subaddress_balance_container;
+
     static monero_wallet_light* create_wallet_from_seed(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
     static monero_wallet_light* create_wallet_from_keys(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);
     static monero_wallet_light* create_wallet_random(monero_wallet_config& config, std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory);

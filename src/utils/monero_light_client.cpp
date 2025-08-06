@@ -86,6 +86,15 @@ namespace monero {
       if (!m_connected) {
         if (!uri.empty()) std::cout << "Could not connect to light wallet server at " << uri << std::endl;
       }
+
+      try {
+        std::vector<std::string> amounts;
+        amounts.push_back("0");
+        get_random_outs(15, amounts);
+        m_connected = true;
+      } catch (...) {
+        m_connected = false;
+      }
     }
 
     m_server = uri;

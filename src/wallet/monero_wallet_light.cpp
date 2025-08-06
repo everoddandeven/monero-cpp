@@ -15,6 +15,8 @@
 #define UNSIGNED_TX_PREFIX "Monero unsigned tx set\005"
 #define SIGNED_TX_PREFIX "Monero signed tx set\005"
 #define MULTISIG_UNSIGNED_TX_PREFIX "Monero multisig unsigned tx set\001"
+#define TAIL_EMISSION_REWARD 600000000000
+#define TAIL_EMISSION_HEIGHT 2641623
 
 namespace
 {
@@ -825,7 +827,10 @@ namespace monero {
 
     m_is_connected = is_connected_to_daemon();
 
-    if (m_is_connected) login();
+    if (m_is_connected) {
+      try { login(); }
+      catch (...) { }
+    }
   }
 
   void monero_wallet_light::set_daemon_connection(const boost::optional<monero_rpc_connection> &connection) {    
@@ -833,7 +838,10 @@ namespace monero {
 
     m_is_connected = is_connected_to_daemon();
 
-    if (m_is_connected) login();
+    if (m_is_connected) {
+      try { login(); }
+      catch (...) { }
+    }
   }
 
   void monero_wallet_light::set_daemon_proxy(const std::string& uri) {
@@ -1038,59 +1046,32 @@ namespace monero {
   }
 
   uint64_t monero_wallet_light::get_balance() const {
-    const auto resp = get_unspent_outs(true);
-
-    uint64_t balance = 0;
-
-    for (auto const &output : *resp.m_outputs) {
-      balance += gen_utils::uint64_t_cast(*output.m_amount);
-    }
-
-    for (const auto &unconfirmed_tx : (*m_unconfirmed_txs)) {
-      balance += get_tx_balance(unconfirmed_tx);
-    }
-
-    return balance;
+    return m_wallet_balance;
   }
 
   uint64_t monero_wallet_light::get_balance(uint32_t account_index) const {
-    const auto resp = get_unspent_outs(true);
+    auto account_balance = m_account_balance_container.find(account_index);
 
-    uint64_t balance = 0;
-
-    for (auto const &output : *resp.m_outputs) {
-      if(*output.m_recipient->m_maj_i == account_index) {
-        balance += gen_utils::uint64_t_cast(*output.m_amount);
-      }
+    if (account_balance == m_account_balance_container.end()) {
+      return 0;
     }
-
-    if (account_index == 0) {
-      for (const auto &unconfirmed_tx : (*m_unconfirmed_txs)) {
-        balance += get_tx_balance(unconfirmed_tx);
-      }
+    else {
+      return account_balance->second;
     }
-
-    return balance;
   }
 
   uint64_t monero_wallet_light::get_balance(uint32_t account_idx, uint32_t subaddress_idx) const {
-    const auto resp = get_unspent_outs(true);
-
-    uint64_t balance = 0;
-
-    for (auto const &output : *resp.m_outputs) {
-      if(*output.m_recipient->m_maj_i == account_idx && *output.m_recipient->m_min_i == subaddress_idx) {
-        balance += gen_utils::uint64_t_cast(*output.m_amount);
-      }
+    auto account_subaddress_balance = m_subaddress_balance_container.find(account_idx);
+    if (account_subaddress_balance == m_subaddress_balance_container.end()) {
+      return 0;
     }
 
-    if (account_idx == 0 && subaddress_idx == 0) {
-      for (const auto &unconfirmed_tx : (*m_unconfirmed_txs)) {
-        balance += get_tx_balance(unconfirmed_tx);
-      }
+    auto subaddress_balance = account_subaddress_balance->second.find(subaddress_idx);
+    if (subaddress_balance == account_subaddress_balance->second.end()) {
+      return 0;
     }
-
-    return balance;
+    
+    return subaddress_balance->second;
   }
 
   uint64_t monero_wallet_light::get_unlocked_balance() const {
@@ -1607,12 +1588,20 @@ namespace monero {
     try {
       std::vector<std::string> tx_hashes;
       for (auto &ptx: ptx_vector) {
+        std::cout << "submit_txs(): before submit raw tx" << std::endl;
         const auto res = m_light_client->submit_raw_tx(epee::string_tools::buff_to_hex_nodelimer(cryptonote::tx_to_blob(ptx.tx)));
-        if (!res.m_status.get()) throw std::runtime_error("Could not relay tx" + signed_tx_hex);
-        tx_hashes.push_back(epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx)));
+        if (res.m_status == boost::none || res.m_status.get() != std::string("OK")) throw std::runtime_error("Could not relay tx" + signed_tx_hex);
+        std::cout << "submit_txs(): before get transaction hash" << std::endl;
+        crypto::hash txid;
+        txid = cryptonote::get_transaction_hash(ptx.tx);
+        std::cout << "submit_txs(): after get transaction hash" << std::endl;
+        tx_hashes.push_back(epee::string_tools::pod_to_hex(txid));
+        std::cout << "submit_txs(): after push transaction hash" << std::endl;
       }
 
+      std::cout << "submit_txs(): before listener call" << std::endl;
       m_wallet_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of spent funds
+      std::cout << "submit_txs(): before after listener call" << std::endl;
       return tx_hashes;
     } catch (const std::exception &e) {
       throw std::runtime_error(std::string("Failed to submit signed tx: ") + e.what());
@@ -1758,7 +1747,7 @@ namespace monero {
         auto submit_res = m_light_client->submit_raw_tx(*constructed_tx.m_signed_serialized_tx_string);
         std::cout << "monero_wallet_light::create_txs(): after relay" << std::endl;
 
-        if (submit_res.m_status) {
+        if (submit_res.m_status != boost::none && submit_res.m_status == std::string("OK")) {
           relayed = true;
         }
       }
@@ -1846,6 +1835,8 @@ namespace monero {
     std::shared_ptr<monero_tx_wallet> tx_wallet = std::make_shared<monero_tx_wallet>();
     tx->copy(tx, tx_wallet);
     m_unconfirmed_txs->push_back(tx_wallet);
+
+    calculate_balance();
 
     if (relayed) {
       // store tx info
@@ -2595,7 +2586,7 @@ namespace monero {
     m_rescan_on_sync = false;
     m_syncing_enabled = false;
     m_sync_loop_running = false;
-    m_last_block_reward = 0;
+    m_last_block_reward = TAIL_EMISSION_REWARD; // minumum tail emission
 
     m_unconfirmed_txs = std::make_unique<std::vector<std::shared_ptr<monero_tx_wallet>>>();
     m_key_images_in_pool = std::make_unique<std::vector<std::string>>();
@@ -3215,8 +3206,12 @@ namespace monero {
             incoming_transfer->m_amount = out_amount;
 
             // TODO wallet full gives to 2 piconero less
-            uint64_t reward = m_last_block_reward > 1 ? m_last_block_reward - 2 : m_last_block_reward;
-            monero_utils::set_num_suggested_confirmations(incoming_transfer, current_height, reward, *tx.m_unlock_time);
+            if (current_height >= TAIL_EMISSION_HEIGHT) {
+              uint64_t reward = m_last_block_reward > 1 ? m_last_block_reward - 2 : m_last_block_reward;
+              monero_utils::set_num_suggested_confirmations(incoming_transfer, current_height, reward, *tx.m_unlock_time);
+            } else {
+              incoming_transfer->m_num_suggested_confirmations = 1;
+            }
 
             tx_wallet->m_incoming_transfers.push_back(incoming_transfer);
 
@@ -3543,31 +3538,11 @@ namespace monero {
       }
     }
 
-    //const auto unconfirmed_txs = m_unconfirmed_txs;
-
     const auto found = std::find_if(m_key_images_in_pool->begin(), m_key_images_in_pool->end(), [key_image](const std::string& kip){
       return key_image == kip;
     });
 
     return found != m_key_images_in_pool->end();
-
-    /*
-    for (const auto unconfirmed_tx : (*m_unconfirmed_txs)) {
-      if (!unconfirmed_tx->m_is_outgoing.get() || unconfirmed_tx->m_inputs.empty()) continue;
-      const auto inputs = unconfirmed_tx->m_inputs;
-
-      for (const auto &input : inputs) {
-        const auto in = dynamic_cast<monero_output_wallet*>(input.get());
-        if (in->m_key_image == boost::none) continue;
-        if ((*in->m_key_image)->m_hex.get() == key_image ) {
-          return true;
-        }
-      }
-    }
-
-    */
-
-    return false;
   }
 
   bool monero_wallet_light::key_image_is_spent(std::shared_ptr<monero_key_image> key_image) const {
@@ -3715,7 +3690,59 @@ namespace monero {
   }
 
   void monero_wallet_light::calculate_balance() {
-    
+    const auto resp = get_unspent_outs(true);
+
+    m_wallet_balance = 0;
+    m_account_balance_container.clear();
+    m_subaddress_balance_container.clear();
+
+    for (auto const &output : *resp.m_outputs) {
+      uint32_t account_idx = *output.m_recipient->m_maj_i;
+      uint32_t subaddress_idx = *output.m_recipient->m_min_i;
+      uint64_t output_amount = gen_utils::uint64_t_cast(*output.m_amount);
+      auto account_balance = m_account_balance_container.find(account_idx);
+
+      if (account_balance == m_account_balance_container.end()) {
+        m_account_balance_container[account_idx] = output_amount;
+      }
+      else {
+        m_account_balance_container[account_idx] += output_amount;
+      }
+
+      auto account_subaddress_balance = m_subaddress_balance_container.find(account_idx);
+      if (account_subaddress_balance == m_subaddress_balance_container.end()) {
+        m_subaddress_balance_container[account_idx][subaddress_idx] = output_amount;
+      }
+      else {
+        auto subaddress_balance = account_subaddress_balance->second.find(subaddress_idx);
+        if (subaddress_balance == account_subaddress_balance->second.end()) {
+          m_subaddress_balance_container[account_idx][subaddress_idx] = output_amount;
+        }
+        else {
+          m_subaddress_balance_container[account_idx][subaddress_idx] += output_amount;
+        }
+      }
+
+      m_wallet_balance += output_amount;
+    }
+
+    // Calculate change amount
+
+    for(auto const &tx : (*m_unconfirmed_txs)) {
+      uint64_t change_amount = tx->m_change_amount.get();
+      m_wallet_balance += change_amount;
+
+      if (tx->m_outgoing_transfer != boost::none) {
+        const auto &outgoing_transfer = tx->m_outgoing_transfer.get();
+
+        for(auto const &dest : outgoing_transfer->m_destinations) {
+          if (destination_is_ours(dest)) {
+            m_wallet_balance += dest->m_amount.get();
+          }
+        }
+      }
+    }
+
   }
 
   bool monero_wallet_light::destination_is_ours(const std::shared_ptr<monero_destination> &dest) const {
@@ -3810,9 +3837,21 @@ namespace monero {
 
         const uint64_t old_outs_amount = gen_utils::uint64_t_cast(m_unspent_outs.m_amount.get());
         
+        uint64_t blockchain_height = 1;
+        auto addr_info = m_light_client->get_address_info(address, view_key);
+        if (addr_info.m_blockchain_height != boost::none) blockchain_height = addr_info.m_blockchain_height.get() + 1;
+
+        if (blockchain_height == last_height) {
+          std::cout << "monero_wallet_light::sync(): skipping sync at height " << blockchain_height << std::endl; 
+          m_wallet_listener->on_sync_end();
+          return result;
+        }
+
+        std::cout << "monero_wallet_light::sync(): syncing at height " << blockchain_height << std::endl; 
+
         boost::unique_lock<boost::recursive_mutex> lock(m_sync_data_mutex);
         
-        m_address_info = m_light_client->get_address_info(address, view_key);
+        m_address_info = addr_info;
         m_address_txs = m_light_client->get_address_txs(address, view_key);
         m_unspent_outs = m_light_client->get_unspent_outs(address, view_key, "0", 0);
         m_subaddrs = m_light_client->get_subaddrs(address, view_key);
@@ -3823,7 +3862,7 @@ namespace monero {
 
         const auto txs = m_address_txs.m_transactions.get();
 
-        uint64_t last_block_reward = 0;
+        uint64_t last_block_reward = TAIL_EMISSION_REWARD;
 
         for (const auto &tx : txs) {
           if (tx.m_coinbase.get()) {
@@ -3833,9 +3872,11 @@ namespace monero {
           }
         }
 
-        if (m_last_block_reward != last_block_reward) m_last_block_reward = last_block_reward;
+        if (m_last_block_reward < last_block_reward) m_last_block_reward = last_block_reward;
 
         if (!m_is_synced) m_is_synced = is_synced();
+
+        calculate_balance();
 
         lock.unlock();
 
@@ -3852,12 +3893,23 @@ namespace monero {
 
     uint64_t current_height = get_height();
     uint64_t daemon_height = get_daemon_height();
+    uint64_t restore_height = get_restore_height();
 
-    result.m_num_blocks_fetched = current_height - last_height;
+    std::cout << "monero_wallet_light::sync(): current_height=" << current_height << ", daemon_height=" << daemon_height << ", restore_height=" << restore_height << ", last_height=" << last_height << std::endl;
 
-    if (current_height > last_height) m_wallet_listener->on_new_block(current_height);
+    if (restore_height < current_height) {
+      if (last_height < restore_height) last_height = restore_height;
+      std::cout << "monero_wallet_light::sync(): last_height" << last_height << std::endl;
+      result.m_num_blocks_fetched = current_height - last_height;
+    
+      if (current_height > last_height) m_wallet_listener->on_new_block(current_height);
 
-    result.m_received_money = received_money;
+      result.m_received_money = received_money;
+    } else {
+      result.m_num_blocks_fetched = 0;
+      result.m_received_money = false;
+    }
+
     // notify listeners of sync end and check for updated funds
     m_wallet_listener->on_sync_end();
     return result;

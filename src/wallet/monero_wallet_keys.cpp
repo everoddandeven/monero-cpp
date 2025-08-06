@@ -346,27 +346,50 @@ namespace monero {
 
   monero_integrated_address monero_wallet_keys::get_integrated_address(const std::string& standard_address, const std::string& payment_id) const {
     std::cout << "monero_wallet_keys::get_integrated_address()" << std::endl;
-    if (standard_address.empty()) {
-      return monero_utils::get_integrated_address(m_network_type, get_primary_address(), payment_id);
+
+    // this logic is based on monero_wallet_full::get_integrated_address()
+    
+    // randomly generate payment id if not given, else validate
+    crypto::hash8 payment_id_h8;
+    if (payment_id.empty()) {
+      payment_id_h8 = crypto::rand<crypto::hash8>();
+    } else {
+      if (!monero_utils::parse_short_payment_id(payment_id, payment_id_h8)) throw std::runtime_error("Invalid payment ID: " + payment_id);
     }
-    return monero_utils::get_integrated_address(m_network_type, standard_address, payment_id);
+
+    // use primary address if standard address not given, else validate
+    if (standard_address.empty()) {
+      hw::device &hwdev = m_account.get_device();
+      cryptonote::subaddress_index index{0, 0};
+      cryptonote::account_public_address address = hwdev.get_subaddress(m_account.get_keys(), index);
+      return decode_integrated_address(cryptonote::get_account_integrated_address_as_str(get_nettype(), address, payment_id_h8));
+    } else {
+
+      // validate standard address
+      cryptonote::address_parse_info info;
+      if (!cryptonote::get_account_address_from_str(info, get_nettype(), standard_address)) throw std::runtime_error("Invalid address");
+      if (info.is_subaddress) throw std::runtime_error("Subaddress shouldn't be used");
+      if (info.has_payment_id) throw std::runtime_error("Already integrated address");
+      if (payment_id.empty()) throw std::runtime_error("Payment ID shouldn't be left unspecified");
+
+      // create integrated address from given standard address
+      return decode_integrated_address(cryptonote::get_account_integrated_address_as_str(get_nettype(), info.address, payment_id_h8));
+    }
   }
 
   monero_integrated_address monero_wallet_keys::decode_integrated_address(const std::string& integrated_address) const {
     std::cout << "monero_wallet_keys::decode_integrated_address()" << std::endl;
+    // TODO this logic is based on monero_wallet_full::decode_integrated_address(), refactory code?
 
     cryptonote::address_parse_info info;
     if (!cryptonote::get_account_address_from_str(info, get_nettype(), integrated_address)) throw std::runtime_error("Invalid address");
+    if (!info.has_payment_id) throw std::runtime_error("Address is not an integrated address");
 
     cryptonote::account_public_address address = info.address;
     monero_integrated_address result;
     result.m_integrated_address = integrated_address;
-    //result.m_standard_address = string_tools::pod_to_hex(address.m_view_public_key);
     result.m_standard_address = cryptonote::get_account_address_as_str(get_nettype(), info.is_subaddress, address);
-    
-    if (info.has_payment_id == true) {
-      result.m_payment_id = string_tools::pod_to_hex(info.payment_id);
-    }
+    result.m_payment_id = string_tools::pod_to_hex(info.payment_id);
 
     return result;
   }

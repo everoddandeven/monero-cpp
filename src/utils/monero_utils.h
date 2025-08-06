@@ -249,6 +249,8 @@ namespace monero_utils
 
   // compute m_num_suggested_confirmations  TODO monero-project: this logic is based on wallet_rpc_server.cpp `set_confirmations` but it should be encapsulated in wallet2
   static void set_num_suggested_confirmations(std::shared_ptr<monero_incoming_transfer>& incoming_transfer, uint64_t blockchain_height, uint64_t block_reward, uint64_t unlock_time) {
+    std::cout << "set_num_suggested_confirmations(): blockchain_height=" << blockchain_height << ", block_reward=" << block_reward << ", unlock_time=" << unlock_time << std::endl;
+    
     if (block_reward == 0) incoming_transfer->m_num_suggested_confirmations = 0;
     else incoming_transfer->m_num_suggested_confirmations = (incoming_transfer->m_amount.get() + block_reward - 1) / block_reward;
     
