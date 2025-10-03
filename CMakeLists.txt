@@ -263,7 +263,11 @@ set_target_properties(version PROPERTIES IMPORTED_LOCATION
 add_library(randomx STATIC IMPORTED)
 set_target_properties(randomx PROPERTIES IMPORTED_LOCATION
     ${MONERO_PROJECT_BUILD}/external/randomx/librandomx.a)
-    
+
+add_library(mx25519 STATIC IMPORTED)
+set_target_properties(mx25519 PROPERTIES IMPORTED_LOCATION
+    ${MONERO_PROJECT_BUILD}/external/mx25519/libmx25519.a)
+
 ########################
 # Build c++ library
 ########################
@@ -288,6 +292,7 @@ if (BUILD_LIBRARY)
       "${MONERO_PROJECT}/contrib/epee/include"
       "${MONERO_PROJECT}/external/"
       "${MONERO_PROJECT}/external/easylogging++"
+      "${MONERO_PROJECT}/external/mx25519/include"
       "${MONERO_PROJECT}/external/rapidjson/include"
       "${MONERO_PROJECT_SRC}/"
       "${MONERO_PROJECT_SRC}/wallet"
@@ -311,6 +316,7 @@ if (BUILD_LIBRARY)
       lmdb
       unbound
       easylogging
+      mx25519
       cryptonote_core
       cryptonote_protocol
       cryptonote_basic
@@ -382,6 +388,7 @@ if (BUILD_SAMPLE)
       "${MONERO_PROJECT}/contrib/epee/include"
       "${MONERO_PROJECT}/external/"
       "${MONERO_PROJECT}/external/easylogging++"
+      "${MONERO_PROJECT}/external/mx25519/include"
       "${MONERO_PROJECT}/external/rapidjson/include"
       "${MONERO_PROJECT_SRC}/"
       "${MONERO_PROJECT_SRC}/wallet"
@@ -404,6 +411,7 @@ if (BUILD_SAMPLE)
       net
       lmdb
       easylogging
+      mx25519
       cryptonote_core
       cryptonote_protocol
       cryptonote_basic
@@ -454,6 +462,7 @@ if (BUILD_SCRATCHPAD)
       "${MONERO_PROJECT}/contrib/epee/include"
       "${MONERO_PROJECT}/external/"
       "${MONERO_PROJECT}/external/easylogging++"
+      "${MONERO_PROJECT}/external/mx25519/include"
       "${MONERO_PROJECT}/external/rapidjson/include"
       "${MONERO_PROJECT_SRC}/"
       "${MONERO_PROJECT_SRC}/wallet"
@@ -476,6 +485,7 @@ if (BUILD_SCRATCHPAD)
       net
       lmdb
       easylogging
+      mx25519
       cryptonote_core
       cryptonote_protocol
       cryptonote_basic
@@ -526,6 +536,7 @@ if (BUILD_TESTS)
       "${MONERO_PROJECT}/contrib/epee/include"
       "${MONERO_PROJECT}/external/"
       "${MONERO_PROJECT}/external/easylogging++"
+      "${MONERO_PROJECT}/external/mx25519/include"
       "${MONERO_PROJECT}/external/rapidjson/include"
       "${MONERO_PROJECT_SRC}/"
       "${MONERO_PROJECT_SRC}/wallet"
@@ -548,6 +559,7 @@ if (BUILD_TESTS)
       net
       lmdb
       easylogging
+      mx25519
       cryptonote_core
       cryptonote_protocol
       cryptonote_basic
