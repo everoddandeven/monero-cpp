@@ -1,0 +1,3 @@
+[submodule "external/monero-project"]
+	path = external/monero-project
+	url = https://github.com/seraphis-migration/monero
