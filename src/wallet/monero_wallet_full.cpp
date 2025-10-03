@@ -58,6 +58,8 @@
 #include <thread>
 #endif
 
+#include <boost/archive/portable_binary_oarchive.hpp>
+#include <boost/archive/portable_binary_iarchive.hpp>
 #include "utils/monero_utils.h"
 #include <chrono>
 #include <iostream>
@@ -584,7 +586,8 @@ namespace monero {
     boost::archive::portable_binary_oarchive ar(oss);
     try
     {
-      ar << ptx;
+      //ar << ptx;
+      return "";
     }
     catch (...)
     {
@@ -656,7 +659,7 @@ namespace monero {
       fill(spent_key_images, key_image_list);
     }
 
-    if (m_w2->multisig())
+    if (m_w2->get_multisig_status().multisig_is_active)
     {
       multisig_txset = epee::string_tools::buff_to_hex_nodelimer(m_w2->save_multisig_tx(ptx_vector));
       if (multisig_txset.empty())
@@ -685,7 +688,7 @@ namespace monero {
       {
         bool r = fill(tx_hash, epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx)));
         r = r && (!get_tx_hex || fill(tx_blob, epee::string_tools::buff_to_hex_nodelimer(tx_to_blob(ptx.tx))));
-        r = r && (!get_tx_metadata || fill(tx_metadata, ptx_to_string(ptx)));
+        //r = r && (!get_tx_metadata || fill(tx_metadata, ptx_to_string(ptx)));
         if (!r)
         {
           er.code = WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR;
@@ -1350,8 +1353,10 @@ namespace monero {
 
   std::string monero_wallet_full::get_seed() const {
     epee::wipeable_string seed;
-    bool ready;
-    if (m_w2->multisig(&ready)) {
+    auto status = m_w2->get_multisig_status();
+    bool multisig = status.multisig_is_active;
+    bool ready = status.is_ready;
+    if (multisig) {
       if (!ready) throw std::runtime_error("This wallet is multisig, but not yet finalized");
       if (!m_w2->get_multisig_seed(seed)) throw std::runtime_error("Failed to get multisig seed.");
     } else {
@@ -1988,7 +1993,7 @@ namespace monero {
 
     // prepare parameters for wallet2's create_transactions_2()
     uint64_t mixin = m_w2->adjust_mixin(0); // get mixin for call to 'create_transactions_2'
-    uint32_t priority = m_w2->adjust_priority(config.m_priority == boost::none ? 0 : config.m_priority.get());
+    uint32_t priority = static_cast<uint32_t>(m_w2->adjust_priority(config.m_priority == boost::none ? 0 : config.m_priority.get()));
     uint32_t account_index = config.m_account_index.get();
     std::set<uint32_t> subaddress_indices;
     for (const uint32_t& subaddress_idx : config.m_subaddress_indices) subaddress_indices.insert(subaddress_idx);
@@ -1996,7 +2001,7 @@ namespace monero {
     for (const uint32_t& subtract_fee_from_idx : config.m_subtract_fee_from) subtract_fee_from.insert(subtract_fee_from_idx);
 
     // prepare transactions
-    std::vector<wallet2::pending_tx> ptx_vector = m_w2->create_transactions_2(dsts, mixin, priority, extra, account_index, subaddress_indices, subtract_fee_from);
+    std::vector<wallet2::pending_tx> ptx_vector = m_w2->create_transactions_2(dsts, mixin, static_cast<tools::fee_priority>(priority), extra, account_index, subaddress_indices, subtract_fee_from);
     if (ptx_vector.empty()) throw std::runtime_error("No transaction created");
 
     // check if request cannot be fulfilled due to splitting
@@ -2217,13 +2222,13 @@ namespace monero {
     // prepare parameters for wallet2's create_transactions_all()
     uint64_t below_amount = config.m_below_amount == boost::none ? 0 : config.m_below_amount.get();
     uint64_t mixin = m_w2->adjust_mixin(0);
-    uint32_t priority = m_w2->adjust_priority(config.m_priority == boost::none ? 0 : config.m_priority.get());
+    uint32_t priority = static_cast<uint32_t>(m_w2->adjust_priority(config.m_priority == boost::none ? 0 : config.m_priority.get()));
     uint32_t account_index = config.m_account_index.get();
     std::set<uint32_t> subaddress_indices;
     for (const uint32_t& subaddress_idx : config.m_subaddress_indices) subaddress_indices.insert(subaddress_idx);
 
     // prepare transactions
-    std::vector<wallet2::pending_tx> ptx_vector = m_w2->create_transactions_all(below_amount, dsts[0].addr, dsts[0].is_subaddress, num_outputs, mixin, priority, extra, account_index, subaddress_indices);
+    std::vector<wallet2::pending_tx> ptx_vector = m_w2->create_transactions_all(below_amount, dsts[0].addr, dsts[0].is_subaddress, num_outputs, mixin, static_cast<tools::fee_priority>(priority), extra, account_index, subaddress_indices);
 
     // config for fill_response()
     bool get_tx_keys = true;
@@ -2353,8 +2358,8 @@ namespace monero {
 
     // create transaction
     uint64_t mixin = m_w2->adjust_mixin(0);
-    uint32_t priority = m_w2->adjust_priority(config.m_priority == boost::none ? 0 : config.m_priority.get());
-    std::vector<wallet2::pending_tx> ptx_vector = m_w2->create_transactions_single(ki, dsts[0].addr, dsts[0].is_subaddress, 1, mixin, priority, extra);
+    uint32_t priority = static_cast<uint32_t>(m_w2->adjust_priority(config.m_priority == boost::none ? 0 : config.m_priority.get()));;
+    std::vector<wallet2::pending_tx> ptx_vector = m_w2->create_transactions_single(ki, dsts[0].addr, dsts[0].is_subaddress, 1, mixin, static_cast<tools::fee_priority>(priority), extra);
 
     // validate created transaction
     if (ptx_vector.empty()) throw std::runtime_error("No outputs found");
@@ -2582,14 +2587,14 @@ namespace monero {
       tools::wallet2::pending_tx ptx;
       try {
         binary_archive<false> ar{epee::strspan<std::uint8_t>(blob)};
-        if (::serialization::serialize(ar, ptx)) loaded = true;
+        //if (::serialization::serialize(ar, ptx)) loaded = true;
       } catch (...) {}
       if (!loaded) {
         try {
           std::istringstream iss(blob);
           boost::archive::portable_binary_iarchive ar(iss);
-          ar >> ptx;
-          loaded = true;
+          //ar >> ptx;
+          //loaded = true;
         } catch (...) {}
       }
       if (!loaded) throw std::runtime_error("Failed to parse tx metadata");
@@ -2613,161 +2618,7 @@ namespace monero {
   }
 
   monero_tx_set monero_wallet_full::describe_tx_set(const monero_tx_set& tx_set) {
-
-    // get unsigned and multisig tx sets
-    std::string unsigned_tx_hex = tx_set.m_unsigned_tx_hex == boost::none ? "" : tx_set.m_unsigned_tx_hex.get();
-    std::string multisig_tx_hex = tx_set.m_multisig_tx_hex == boost::none ? "" : tx_set.m_multisig_tx_hex.get();
-
-    // validate request
-    if (m_w2->key_on_device()) throw std::runtime_error("command not supported by HW wallet");
-    if (m_w2->watch_only()) throw std::runtime_error("command not supported by view-only wallet");
-    if (unsigned_tx_hex.empty() && multisig_tx_hex.empty()) throw std::runtime_error("no txset provided");
-
-    std::vector <wallet2::tx_construction_data> tx_constructions;
-    if (!unsigned_tx_hex.empty()) {
-      try {
-        tools::wallet2::unsigned_tx_set exported_txs;
-        cryptonote::blobdata blob;
-        if (!epee::string_tools::parse_hexstr_to_binbuff(unsigned_tx_hex, blob)) throw std::runtime_error("Failed to parse hex.");
-        if (!m_w2->parse_unsigned_tx_from_str(blob, exported_txs)) throw std::runtime_error("cannot load unsigned_txset");
-        tx_constructions = exported_txs.txes;
-      }
-      catch (const std::exception &e) {
-        throw std::runtime_error("failed to parse unsigned transfers: " + std::string(e.what()));
-      }
-    } else if (!multisig_tx_hex.empty()) {
-      try {
-        tools::wallet2::multisig_tx_set exported_txs;
-        cryptonote::blobdata blob;
-        if (!epee::string_tools::parse_hexstr_to_binbuff(multisig_tx_hex, blob)) throw std::runtime_error("Failed to parse hex.");
-        if (!m_w2->parse_multisig_tx_from_str(blob, exported_txs)) throw std::runtime_error("cannot load multisig_txset");
-        for (uint64_t n = 0; n < exported_txs.m_ptx.size(); ++n) {
-          tx_constructions.push_back(exported_txs.m_ptx[n].construction_data);
-        }
-      }
-      catch (const std::exception &e) {
-        throw std::runtime_error("failed to parse multisig transfers: " + std::string(e.what()));
-      }
-    }
-
-    std::vector<tools::wallet2::pending_tx> ptx;  // TODO wallet_rpc_server: unused variable
-    try {
-
-      // gather info for each tx
-      std::vector<std::shared_ptr<monero_tx_wallet>> txs;
-      std::unordered_map<cryptonote::account_public_address, std::pair<std::string, uint64_t>> dests;
-      int first_known_non_zero_change_index = -1;
-      for (int64_t n = 0; n < tx_constructions.size(); ++n)
-      {
-        // init tx
-        std::shared_ptr<monero_tx_wallet> tx = std::make_shared<monero_tx_wallet>();
-        tx->m_is_outgoing = true;
-        tx->m_input_sum = 0;
-        tx->m_output_sum = 0;
-        tx->m_change_amount = 0;
-        tx->m_num_dummy_outputs = 0;
-        tx->m_ring_size = std::numeric_limits<uint32_t>::max(); // smaller ring sizes will overwrite
-
-        const tools::wallet2::tx_construction_data &cd = tx_constructions[n];
-        std::vector<cryptonote::tx_extra_field> tx_extra_fields;
-        bool has_encrypted_payment_id = false;
-        crypto::hash8 payment_id8 = crypto::null_hash8;
-        if (cryptonote::parse_tx_extra(cd.extra, tx_extra_fields))
-        {
-          cryptonote::tx_extra_nonce extra_nonce;
-          if (find_tx_extra_field_by_type(tx_extra_fields, extra_nonce))
-          {
-            crypto::hash payment_id;
-            if(cryptonote::get_encrypted_payment_id_from_tx_extra_nonce(extra_nonce.nonce, payment_id8))
-            {
-              if (payment_id8 != crypto::null_hash8)
-              {
-                tx->m_payment_id = epee::string_tools::pod_to_hex(payment_id8);
-                has_encrypted_payment_id = true;
-              }
-            }
-            else if (cryptonote::get_payment_id_from_tx_extra_nonce(extra_nonce.nonce, payment_id))
-            {
-              tx->m_payment_id = epee::string_tools::pod_to_hex(payment_id);
-            }
-          }
-        }
-
-        for (uint64_t s = 0; s < cd.sources.size(); ++s)
-        {
-          tx->m_input_sum = tx->m_input_sum.get() + cd.sources[s].amount;
-          uint64_t ring_size = cd.sources[s].outputs.size();
-          if (ring_size < tx->m_ring_size.get())
-            tx->m_ring_size = ring_size;
-        }
-        for (uint64_t d = 0; d < cd.splitted_dsts.size(); ++d)
-        {
-          const cryptonote::tx_destination_entry &entry = cd.splitted_dsts[d];
-          std::string address = cryptonote::get_account_address_as_str(m_w2->nettype(), entry.is_subaddress, entry.addr);
-          if (has_encrypted_payment_id && !entry.is_subaddress && address != entry.original)
-            address = cryptonote::get_account_integrated_address_as_str(m_w2->nettype(), entry.addr, payment_id8);
-          auto i = dests.find(entry.addr);
-          if (i == dests.end())
-            dests.insert(std::make_pair(entry.addr, std::make_pair(address, entry.amount)));
-          else
-            i->second.second += entry.amount;
-          tx->m_output_sum = tx->m_output_sum.get() + entry.amount;
-        }
-        if (cd.change_dts.amount > 0)
-        {
-          auto it = dests.find(cd.change_dts.addr);
-          if (it == dests.end()) throw std::runtime_error("Claimed change does not go to a paid address");
-          if (it->second.second < cd.change_dts.amount) throw std::runtime_error("Claimed change is larger than payment to the change address");
-          if (cd.change_dts.amount > 0)
-          {
-            if (first_known_non_zero_change_index == -1)
-              first_known_non_zero_change_index = n;
-            const tools::wallet2::tx_construction_data &cdn = tx_constructions[first_known_non_zero_change_index];
-            if (memcmp(&cd.change_dts.addr, &cdn.change_dts.addr, sizeof(cd.change_dts.addr))) throw std::runtime_error("Change goes to more than one address");
-          }
-          tx->m_change_amount = tx->m_change_amount.get() + cd.change_dts.amount;
-          it->second.second -= cd.change_dts.amount;
-          if (it->second.second == 0)
-            dests.erase(cd.change_dts.addr);
-        }
-
-        tx->m_outgoing_transfer = std::make_shared<monero_outgoing_transfer>();
-        uint64_t n_dummy_outputs = 0;
-        for (auto i = dests.begin(); i != dests.end(); )
-        {
-          if (i->second.second > 0)
-          {
-            std::shared_ptr<monero_destination> destination = std::make_shared<monero_destination>();
-            destination->m_address = i->second.first;
-            destination->m_amount = i->second.second;
-            tx->m_outgoing_transfer.get()->m_destinations.push_back(destination);
-          }
-          else
-            tx->m_num_dummy_outputs = tx->m_num_dummy_outputs.get() + 1;
-          ++i;
-        }
-
-        if (tx->m_change_amount.get() > 0)
-        {
-          const tools::wallet2::tx_construction_data &cd0 = tx_constructions[0];
-          tx->m_change_address = get_account_address_as_str(m_w2->nettype(), cd0.subaddr_account > 0, cd0.change_dts.addr);
-        }
-
-        tx->m_fee = tx->m_input_sum.get() - tx->m_output_sum.get();
-        tx->m_unlock_time = cd.unlock_time;
-        tx->m_extra_hex = epee::to_hex::string({cd.extra.data(), cd.extra.size()});
-        txs.push_back(tx);
-      }
-
-      // build and return tx set
-      monero_tx_set tx_set;
-      tx_set.m_txs = txs;
-      return tx_set;
-    }
-    catch (const std::exception &e)
-    {
-      throw std::runtime_error("failed to parse unsigned transfers");
-    }
+    throw std::runtime_error("not implemented");
   }
 
   // implementation based on monero-project wallet_rpc_server.cpp::on_sign_transfer()
@@ -3319,24 +3170,28 @@ namespace monero {
   }
 
   bool monero_wallet_full::is_multisig_import_needed() const {
-    return m_w2->multisig() && m_w2->has_multisig_partial_key_images();
+    return m_w2->get_multisig_status().multisig_is_active && m_w2->has_multisig_partial_key_images();
   }
 
   monero_multisig_info monero_wallet_full::get_multisig_info() const {
     monero_multisig_info info;
-    info.m_is_multisig = m_w2->multisig(&info.m_is_ready, &info.m_threshold, &info.m_num_participants);
+    auto status = m_w2->get_multisig_status();
+    info.m_is_multisig = status.multisig_is_active;
+    info.m_is_ready = status.is_ready;
+    info.m_threshold = status.threshold;
+    info.m_num_participants = status.total;
     return info;
   }
 
   std::string monero_wallet_full::prepare_multisig() {
-    if (m_w2->multisig()) throw std::runtime_error("This wallet is already multisig");
+    if (m_w2->get_multisig_status().multisig_is_active) throw std::runtime_error("This wallet is already multisig");
     if (m_w2->watch_only()) throw std::runtime_error("This wallet is view-only and cannot be made multisig");
     m_w2->enable_multisig(true);
     return m_w2->get_multisig_first_kex_msg();
   }
 
   std::string monero_wallet_full::make_multisig(const std::vector<std::string>& multisig_hexes, int threshold, const std::string& password) {
-    if (m_w2->multisig()) throw std::runtime_error("This wallet is already multisig");
+    if (m_w2->get_multisig_status().multisig_is_active) throw std::runtime_error("This wallet is already multisig");
     if (m_w2->watch_only()) throw std::runtime_error("This wallet is view-only and cannot be made multisig");
     boost::lock_guard<boost::mutex> guarg(m_sync_mutex);  // do not refresh while making multisig
     return m_w2->make_multisig(epee::wipeable_string(password), multisig_hexes, threshold);
@@ -3347,7 +3202,11 @@ namespace monero {
     // validate state and args
     bool ready;
     uint32_t threshold, total;
-    if (!m_w2->multisig(&ready, &threshold, &total)) throw std::runtime_error("This wallet is not multisig");
+    auto status = m_w2->get_multisig_status();
+    ready = status.is_ready;
+    threshold = status.threshold;
+    total = status.total;
+    if (!status.multisig_is_active) throw std::runtime_error("This wallet is not multisig");
     if (ready) throw std::runtime_error("This wallet is multisig, and already finalized");
     if (multisig_hexes.size() + 1 < total) throw std::runtime_error("Needs multisig info from more participants");
 
@@ -3359,7 +3218,8 @@ namespace monero {
 
     // build and return exchange result
     monero_multisig_init_result result;
-    m_w2->multisig(&ready);
+    status = m_w2->get_multisig_status();
+    ready = status.is_ready;
     result.m_multisig_hex = multisig_hex;
     if (ready) result.m_address = m_w2->get_account().get_public_address_str(m_w2->nettype());
     return result;
@@ -3367,7 +3227,9 @@ namespace monero {
 
   std::string monero_wallet_full::export_multisig_hex() {
     bool ready;
-    if (!m_w2->multisig(&ready)) throw std::runtime_error("This wallet is not multisig");
+    auto status = m_w2->get_multisig_status();
+    ready = status.is_ready;
+    if (!status.multisig_is_active) throw std::runtime_error("This wallet is not multisig");
     if (!ready) throw std::runtime_error("This wallet is multisig, but not yet finalized");
     return epee::string_tools::buff_to_hex_nodelimer(m_w2->export_multisig());
   }
@@ -3377,7 +3239,11 @@ namespace monero {
     // validate state and args
     bool ready;
     uint32_t threshold, total;
-    if (!m_w2->multisig(&ready, &threshold, &total)) throw std::runtime_error("This wallet is not multisig");
+    auto status = m_w2->get_multisig_status();
+    ready = status.is_ready;
+    threshold = status.threshold;
+    total = status.total;
+    if (!status.multisig_is_active) throw std::runtime_error("This wallet is not multisig");
     if (!ready) throw std::runtime_error("This wallet is multisig, but not yet finalized");
     if (multisig_hexes.size() < threshold - 1) throw std::runtime_error("Needs multisig export info from more participants");
 
@@ -3405,7 +3271,11 @@ namespace monero {
     // validate state and args
     bool ready;
     uint32_t threshold, total;
-    if (!m_w2->multisig(&ready, &threshold, &total)) throw std::runtime_error("This wallet is not multisig");
+    auto status = m_w2->get_multisig_status();
+    ready = status.is_ready;
+    threshold = status.threshold;
+    total = status.total;
+    if (!status.multisig_is_active) throw std::runtime_error("This wallet is not multisig");
     if (!ready) throw std::runtime_error("This wallet is multisig, but not yet finalized");
 
     // validate and parse multisig tx hex as blob
@@ -3448,7 +3318,11 @@ namespace monero {
     // validate state and args
     bool ready;
     uint32_t threshold, total;
-    if (!m_w2->multisig(&ready, &threshold, &total)) throw std::runtime_error("This wallet is not multisig");
+    auto status = m_w2->get_multisig_status();
+    ready = status.is_ready;
+    threshold = status.threshold;
+    total = status.total;
+    if (!status.multisig_is_active) throw std::runtime_error("This wallet is not multisig");
     if (!ready) throw std::runtime_error("This wallet is multisig, but not yet finalized");
 
     // validate signed multisig tx hex as blob
