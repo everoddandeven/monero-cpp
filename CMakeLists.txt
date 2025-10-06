@@ -268,6 +268,22 @@ add_library(mx25519 STATIC IMPORTED)
 set_target_properties(mx25519 PROPERTIES IMPORTED_LOCATION
     ${MONERO_PROJECT_BUILD}/external/mx25519/libmx25519.a)
 
+add_library(carrot_core STATIC IMPORTED)
+set_target_properties(carrot_core PROPERTIES IMPORTED_LOCATION
+    ${MONERO_PROJECT_BUILD}/src/carrot_core/libcarrot_core.a)
+
+add_library(carrot_impl STATIC IMPORTED)
+set_target_properties(carrot_impl PROPERTIES IMPORTED_LOCATION
+    ${MONERO_PROJECT_BUILD}/src/carrot_impl/libcarrot_impl.a)
+
+add_library(fcmp_pp_rust STATIC IMPORTED)
+set_target_properties(fcmp_pp_rust PROPERTIES IMPORTED_LOCATION
+    ${MONERO_PROJECT_BUILD}/src/fcmp_pp/fcmp_pp_rust/libfcmp_pp_rust.a)
+
+add_library(fcmp_pp STATIC IMPORTED)
+set_target_properties(fcmp_pp PROPERTIES IMPORTED_LOCATION
+    ${MONERO_PROJECT_BUILD}/src/fcmp_pp/libfcmp_pp.a)
+
 ########################
 # Build c++ library
 ########################
@@ -300,6 +316,10 @@ if (BUILD_LIBRARY)
       "${MONERO_PROJECT_SRC}/hardforks"
       "${MONERO_PROJECT_SRC}/crypto"
       "${MONERO_PROJECT_SRC}/crypto/crypto_ops_builder/include/"
+      "${MONERO_PROJECT_SRC}/fcmp_pp"
+      "${MONERO_PROJECT_SRC}/fcmp_pp/fcmp_pp_rust"
+      "${MONERO_PROJECT_SRC}/carrot_core"
+      "${MONERO_PROJECT_SRC}/carrot_impl"
       ${Protobuf_INCLUDE_DIR}
       ${Boost_INCLUDE_DIR}
       ${OPENSSL_INCLUDE_DIR}
@@ -316,7 +336,6 @@ if (BUILD_LIBRARY)
       lmdb
       unbound
       easylogging
-      mx25519
       cryptonote_core
       cryptonote_protocol
       cryptonote_basic
@@ -336,8 +355,13 @@ if (BUILD_LIBRARY)
       randomx
       epee
       hardforks
+      fcmp_pp
+      fcmp_pp_rust
+      carrot_impl
+      carrot_core
+      mx25519
       ${wallet_crypto}
-      
+
       ${UNBOUND_LIBRARIES}
       ${Boost_LIBRARIES}
       ${Protobuf_LIBRARY}
