@@ -56,7 +56,11 @@
 #define monero_utils_h
 
 #include "wallet/monero_wallet_model.h"
+#include "wallet/monero_wallet.h"
 #include "cryptonote_basic/cryptonote_basic.h"
+#include "cryptonote_core/cryptonote_tx_utils.h"
+#include "string_tools.h"
+#include "wallet/wallet2.h"
 #include "serialization/keyvalue_serialization.h" // TODO: consolidate with other binary deps?
 #include "storages/portable_storage.h"
 
@@ -73,6 +77,9 @@ namespace monero_utils
 
   // -------------------------------- UTILS -----------------------------------
 
+  void start_profile(const std::string& name);
+  void end_profile(const std::string& name);
+
   void set_log_level(int level);
   void configure_logging(const std::string& path, bool console);
   monero_integrated_address get_integrated_address(monero_network_type network_type, const std::string& standard_address, const std::string& payment_id);
@@ -85,6 +92,24 @@ namespace monero_utils
   void json_to_binary(const std::string &json, std::string &bin);
   void binary_to_json(const std::string &bin, std::string &json);
   void binary_blocks_to_json(const std::string &bin, std::string &json);
+  bool parse_long_payment_id(const std::string& payment_id_str, crypto::hash& payment_id);
+  bool parse_short_payment_id(const std::string& payment_id_str, crypto::hash8& payment_id);
+
+  std::shared_ptr<monero_tx_query> decontextualize(std::shared_ptr<monero_tx_query> query);
+  bool is_contextual(const monero_transfer_query& query);
+  bool is_contextual(const monero_output_query& query);
+
+  std::string make_uri(const std::string &address, cryptonote::network_type nettype, const std::string &payment_id, uint64_t amount, const std::string &tx_description, const std::string &recipient_name, std::string &error);
+  bool parse_uri(const std::string &uri, std::string &address, cryptonote::network_type nettype, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error);
+
+  /**
+  * Merges a transaction into a unique set of transactions.
+  *
+  * @param tx is the transaction to merge into the existing txs
+  * @param tx_map maps tx hashes to txs
+  * @param block_map maps block heights to blocks
+  */
+  void merge_tx(const std::shared_ptr<monero_tx_wallet>& tx, std::map<std::string, std::shared_ptr<monero_tx_wallet>>& tx_map, std::map<uint64_t, std::shared_ptr<monero_block>>& block_map);
 
   // ------------------------------ RAPIDJSON ---------------------------------
 
@@ -161,18 +186,116 @@ namespace monero_utils
    */
   std::shared_ptr<monero_tx> cn_tx_to_tx(const cryptonote::transaction& cn_tx, bool init_as_tx_wallet = false);
 
+  std::shared_ptr<monero_tx_wallet> ptx_to_tx(const tools::wallet2::pending_tx &ptx, cryptonote::network_type nettype, monero_wallet* wallet);
+
   /**
    * Modified from core_rpc_server.cpp to return a std::string.
    *
    * TODO: remove this duplicate, use core_rpc_server instead
    */
-  static std::string get_pruned_tx_json(cryptonote::transaction &tx)
-  {
+  static std::string get_pruned_tx_json(cryptonote::transaction &tx) {
     std::stringstream ss;
     json_archive<true> ar(ss);
     bool r = tx.serialize_base(ar);
     CHECK_AND_ASSERT_MES(r, std::string(), "Failed to serialize rct signatures base");
     return ss.str();
+  }
+
+  static void add_pid_to_tx_extra(const boost::optional<std::string>& payment_id_string, std::vector<uint8_t> &extra) { // Detect hash8 or hash32 char hex string as pid and configure 'extra' accordingly
+    bool r = false;
+    if (payment_id_string != boost::none && payment_id_string->size() > 0) {
+      crypto::hash payment_id;
+      r = monero_utils::parse_long_payment_id(*payment_id_string, payment_id);
+      if (r) {
+        std::string extra_nonce;
+        cryptonote::set_payment_id_to_tx_extra_nonce(extra_nonce, payment_id);
+        r = cryptonote::add_extra_nonce_to_tx_extra(extra, extra_nonce);
+        if (!r) {
+          throw std::runtime_error("Couldn't add pid nonce to tx extra");
+        }
+      } else {
+        crypto::hash8 payment_id8;
+        r = monero_utils::parse_short_payment_id(*payment_id_string, payment_id8);
+        if (!r) { // a PID has been specified by the user but the last resort in validating it fails; error
+          throw std::runtime_error("Invalid pid");
+        }
+        std::string extra_nonce;
+        cryptonote::set_encrypted_payment_id_to_tx_extra_nonce(extra_nonce, payment_id8);
+        r = cryptonote::add_extra_nonce_to_tx_extra(extra, extra_nonce);
+        if (!r) {
+          throw std::runtime_error("Couldn't add pid nonce to tx extra");
+        }
+      }
+    }
+  }
+
+  static bool rct_hex_to_decrypted_mask(const std::string &rct_string, const crypto::secret_key &view_secret_key, const crypto::public_key& tx_pub_key, uint64_t internal_output_index, rct::key &decrypted_mask) {
+    // rct string is empty if output is non RCT
+    if (rct_string.empty()) {
+      return false;
+    }
+    // rct_string is a magic value if output is RCT and coinbase
+    if (rct_string == "coinbase") {
+      decrypted_mask = rct::identity();
+      return true;
+    }
+    auto make_key_derivation = [&]() {
+      crypto::key_derivation derivation;
+      bool r = generate_key_derivation(tx_pub_key, view_secret_key, derivation);
+      if(!r) throw std::runtime_error("Failed to generate key derivation");
+      crypto::secret_key scalar;
+      crypto::derivation_to_scalar(derivation, internal_output_index, scalar);
+      return rct::sk2rct(scalar);
+    };
+    rct::key encrypted_mask;
+    // rct_string is a string with length 64+16 (<rct commit> + <amount>) if RCT version 2
+    if (rct_string.size() < 64 * 2) {
+      decrypted_mask = rct::genCommitmentMask(make_key_derivation());
+      return true;
+    }
+    // rct_string is a string with length 64+64+64 (<rct commit> + <encrypted mask> + <rct amount>)
+    std::string encrypted_mask_str = rct_string.substr(64,64);
+    if(!epee::string_tools::validate_hex(64, encrypted_mask_str)) throw std::runtime_error("Invalid rct mask: " + encrypted_mask_str);
+    epee::string_tools::hex_to_pod(encrypted_mask_str, encrypted_mask);
+    //
+    if (encrypted_mask == rct::identity()) {
+      // backward compatibility; should no longer be needed after v11 mainnet fork
+      decrypted_mask = encrypted_mask;
+      return true;
+    }
+    //
+    // Decrypt the mask
+    sc_sub(decrypted_mask.bytes,
+      encrypted_mask.bytes,
+      rct::hash_to_scalar(make_key_derivation()).bytes);
+    
+    return true;
+  }
+
+  static bool rct_hex_to_rct_commit(const std::string &rct_string, rct::key &rct_commit) {
+    // rct string is empty if output is non RCT
+    if (rct_string.empty()) {
+      return false;
+    }
+    // rct_string is a string with length 64+64+64 (<rct commit> + <encrypted mask> + <rct amount>)
+    std::string rct_commit_str = rct_string.substr(0,64);
+    if(!epee::string_tools::validate_hex(64, rct_commit_str)) throw std::runtime_error("Invalid rct commit hash: " + rct_commit_str);
+    epee::string_tools::hex_to_pod(rct_commit_str, rct_commit);
+    return true;
+  }
+
+  static std::string dump_ptx(const tools::wallet2::pending_tx &ptx) {
+    std::ostringstream oss;
+    boost::archive::portable_binary_oarchive ar(oss);
+    try
+    {
+      ar << ptx;
+    }
+    catch (...)
+    {
+      return "";
+    }
+    return epee::string_tools::buff_to_hex_nodelimer(oss.str());
   }
 
   // ----------------------------- GATHER BLOCKS ------------------------------
@@ -231,6 +354,66 @@ namespace monero_utils
     return blocks;
   }
 
+  // compute m_num_suggested_confirmations  TODO monero-project: this logic is based on wallet_rpc_server.cpp `set_confirmations` but it should be encapsulated in wallet2
+  static void set_num_suggested_confirmations(std::shared_ptr<monero_incoming_transfer>& incoming_transfer, uint64_t blockchain_height, uint64_t block_reward, uint64_t unlock_time) {    
+    if (block_reward == 0) incoming_transfer->m_num_suggested_confirmations = 0;
+    else incoming_transfer->m_num_suggested_confirmations = (incoming_transfer->m_amount.get() + block_reward - 1) / block_reward;
+    
+    if (unlock_time < CRYPTONOTE_MAX_BLOCK_NUMBER) {
+      if (unlock_time > blockchain_height) incoming_transfer->m_num_suggested_confirmations = std::max(incoming_transfer->m_num_suggested_confirmations.get(), unlock_time - blockchain_height);
+    } else {
+      const uint64_t now = time(NULL);
+      if (unlock_time > now) incoming_transfer->m_num_suggested_confirmations = std::max(incoming_transfer->m_num_suggested_confirmations.get(), (unlock_time - now + DIFFICULTY_TARGET_V2 - 1) / DIFFICULTY_TARGET_V2);
+    }
+  }
+
+  /**
+   * Returns true iff tx1's height is known to be less than tx2's height for sorting.
+   */
+  static bool tx_height_less_than(const std::shared_ptr<monero_tx>& tx1, const std::shared_ptr<monero_tx>& tx2) {
+    if (tx1->m_block != boost::none && tx2->m_block != boost::none) return tx1->get_height() < tx2->get_height();
+    else if (tx1->m_block == boost::none) return false;
+    else return true;
+  }
+
+  /**
+   * Returns true iff transfer1 is ordered before transfer2 by ascending account and subaddress indices.
+   */
+  static bool incoming_transfer_before(const std::shared_ptr<monero_incoming_transfer>& transfer1, const std::shared_ptr<monero_incoming_transfer>& transfer2) {
+
+    // compare by height
+    if (tx_height_less_than(transfer1->m_tx, transfer2->m_tx)) return true;
+
+    // compare by account and subaddress index
+    if (transfer1->m_account_index.get() < transfer2->m_account_index.get()) return true;
+    else if (transfer1->m_account_index.get() == transfer2->m_account_index.get()) return transfer1->m_subaddress_index.get() < transfer2->m_subaddress_index.get();
+    else return false;
+  }
+
+  /**
+   * Returns true iff wallet vout1 is ordered before vout2 by ascending account and subaddress indices then index.
+   */
+  static bool vout_before(const std::shared_ptr<monero_output>& o1, const std::shared_ptr<monero_output>& o2) {
+    if (o1 == o2) return false; // ignore equal references
+    std::shared_ptr<monero_output_wallet> ow1 = std::dynamic_pointer_cast<monero_output_wallet>(o1);
+    std::shared_ptr<monero_output_wallet> ow2 = std::dynamic_pointer_cast<monero_output_wallet>(o2);
+    if (ow1 == nullptr) return true;
+    if (ow1 == nullptr) return false;
+    // compare by height
+    if (tx_height_less_than(ow1->m_tx, ow2->m_tx)) return true;
+
+    // compare by account index, subaddress index, output index, then key image hex
+    if (ow1->m_account_index.get() < ow2->m_account_index.get()) return true;
+    if (ow1->m_account_index.get() == ow2->m_account_index.get()) {
+      if (ow1->m_subaddress_index.get() < ow2->m_subaddress_index.get()) return true;
+      if (ow1->m_subaddress_index.get() == ow2->m_subaddress_index.get()) {
+        if (ow1->m_index.get() < ow2->m_index.get()) return true;
+        if (ow1->m_index.get() == ow2->m_index.get()) throw std::runtime_error("Should never sort outputs with duplicate indices");
+      }
+    }
+    return false;
+  }
+
   // ------------------------------ FREE MEMORY -------------------------------
 
   static void free(std::shared_ptr<monero_block> block) {
@@ -285,6 +468,31 @@ namespace monero_utils
 
   static void free(std::vector<std::shared_ptr<monero_output_wallet>> outputs) {
     return monero_utils::free(monero_utils::get_blocks_from_outputs(outputs));
+  }
+
+
+  template<typename T>
+  T pop_index(std::vector<T>& vec, size_t idx)
+  {
+    CHECK_AND_ASSERT_MES(!vec.empty(), T(), "Vector must be non-empty");
+    CHECK_AND_ASSERT_MES(idx < vec.size(), T(), "idx out of bounds");
+
+    T res = std::move(vec[idx]);
+    if (idx + 1 != vec.size()) {
+      vec[idx] = std::move(vec.back());
+    }
+    vec.resize(vec.size() - 1);
+    
+    return res;
+  }
+  //
+  template<typename T>
+  T pop_random_value(std::vector<T>& vec)
+  {
+    CHECK_AND_ASSERT_MES(!vec.empty(), T(), "Vector must be non-empty");
+    
+    size_t idx = crypto::rand<size_t>() % vec.size();
+    return pop_index (vec, idx);
   }
 }
 #endif /* monero_utils_h */
