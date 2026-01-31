@@ -2072,6 +2072,7 @@ namespace monero {
       if (tx_blobs_iter != tx_blobs.end()) tx->m_full_hex = *tx_blobs_iter;
       if (tx_metadatas_iter != tx_metadatas.end()) tx->m_metadata = *tx_metadatas_iter;
       std::shared_ptr<monero_outgoing_transfer> out_transfer = std::make_shared<monero_outgoing_transfer>();
+      out_transfer->m_tx = tx;
       tx->m_outgoing_transfer = out_transfer;
       out_transfer->m_amount = *tx_amounts_iter;
 
