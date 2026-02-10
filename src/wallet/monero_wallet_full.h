@@ -92,9 +92,10 @@ namespace monero {
      * @param path is the path to the wallet file to open
      * @param password is the password of the wallet file to open
      * @param network_type is the wallet's network type
+     * @param regtest enable regtest
      * @return a pointer to the wallet instance
      */
-    static monero_wallet_full* open_wallet(const std::string& path, const std::string& password, const monero_network_type network_type);
+    static monero_wallet_full* open_wallet(const std::string& path, const std::string& password, const monero_network_type network_type, bool regtest = false);
 
     /**
      * Open an in-memory wallet from existing data buffers.
@@ -105,9 +106,10 @@ namespace monero {
      * @param cache_data contains the contents of the wallet cache file (no extension)
      * @param daemon_connection is connection information to a daemon (default = an unconnected wallet)
      * @param http_client_factory allows use of custom http clients
+     * @param regtest enable regtest
      * @return a pointer to the wallet instance
      */
-    static monero_wallet_full* open_wallet_data(const std::string& password, const monero_network_type, const std::string& keys_data, const std::string& cache_data, const monero_rpc_connection& daemon_connection = monero_rpc_connection(), std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory = nullptr);
+    static monero_wallet_full* open_wallet_data(const std::string& password, const monero_network_type, const std::string& keys_data, const std::string& cache_data, const monero_rpc_connection& daemon_connection = monero_rpc_connection(), std::unique_ptr<epee::net_utils::http::http_client_factory> http_client_factory = nullptr, bool regtest = false);
 
     /**
      * Create a new wallet with the given configuration.
