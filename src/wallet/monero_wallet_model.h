@@ -80,6 +80,7 @@ namespace monero {
     boost::optional<uint64_t> m_account_lookahead;
     boost::optional<uint64_t> m_subaddress_lookahead;
     boost::optional<bool> m_is_multisig;
+    boost::optional<bool> m_regtest;
 
     monero_wallet_config() {}
     monero_wallet_config(const monero_wallet_config& config);

@@ -108,6 +108,7 @@ namespace monero {
     m_account_lookahead = config.m_account_lookahead;
     m_subaddress_lookahead = config.m_subaddress_lookahead;
     m_is_multisig = config.m_is_multisig;
+    m_regtest = config.m_regtest;
   }
 
   monero_wallet_config monero_wallet_config::copy() const {
@@ -145,6 +146,7 @@ namespace monero {
     // set bool values
     if (m_save_current != boost::none) monero_utils::add_json_member("saveCurrent", m_save_current.get(), allocator, root);
     if (m_is_multisig != boost::none) monero_utils::add_json_member("isMultisig", m_is_multisig.get(), allocator, root);
+    if (m_regtest != boost::none) monero_utils::add_json_member("regtest", m_regtest.get(), allocator, root);
 
     // return root
     return root;
@@ -182,6 +184,7 @@ namespace monero {
       else if (key == std::string("accountLookahead")) config->m_account_lookahead = it->second.get_value<uint64_t>();
       else if (key == std::string("subaddressLookahead")) config->m_subaddress_lookahead = it->second.get_value<uint64_t>();
       else if (key == std::string("isMultisig")) config->m_is_multisig = it->second.get_value<bool>();
+      else if (key == std::string("regtest")) config->m_regtest = it->second.get_value<bool>();
     }
 
     return config;
