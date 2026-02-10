@@ -1067,6 +1067,8 @@ namespace monero {
     wallet->m_w2 = std::unique_ptr<tools::wallet2>(new tools::wallet2(static_cast<cryptonote::network_type>(network_type), 1, true));
     wallet->m_w2->load(path, password);
     wallet->m_w2->init("");
+    wallet->m_w2->allow_mismatched_daemon_version(true);
+    wallet->m_w2->max_reorg_depth(MAX_BLOCK_REORGS);
     wallet->init_common();
     return wallet;
   }
@@ -1078,6 +1080,8 @@ namespace monero {
     else wallet->m_w2 = std::unique_ptr<tools::wallet2>(new tools::wallet2(static_cast<cryptonote::network_type>(network_type), 1, true, std::move(http_client_factory)));
     wallet->m_w2->load("", password, keys_data, cache_data);
     wallet->m_w2->init("");
+    wallet->m_w2->allow_mismatched_daemon_version(true);
+    wallet->m_w2->max_reorg_depth(MAX_BLOCK_REORGS);
     wallet->set_daemon_connection(daemon_connection);
     wallet->init_common();
     return wallet;
