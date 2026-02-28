@@ -243,21 +243,21 @@ namespace monero {
   }
 
   monero_integrated_address monero_wallet_keys::get_integrated_address(const std::string& standard_address, const std::string& payment_id) const {
-    std::cout << "monero_wallet_keys::get_integrated_address()" << std::endl;
+    MTRACE("monero_wallet_keys::get_integrated_address()");
     throw std::runtime_error("monero_wallet_keys::get_integrated_address() not implemented");
   }
 
   monero_integrated_address monero_wallet_keys::decode_integrated_address(const std::string& integrated_address) const {
-    std::cout << "monero_wallet_keys::decode_integrated_address()" << std::endl;
+    MTRACE("monero_wallet_keys::decode_integrated_address()");
     throw std::runtime_error("monero_wallet_keys::decode_integrated_address() not implemented");
   }
 
   monero_account monero_wallet_keys::get_account(uint32_t account_idx, bool include_subaddresses) const {
-    std::cout << "monero_wallet_keys::get_account()" << std::endl;
+    MTRACE("monero_wallet_keys::get_account()");
 
     if (include_subaddresses) {
       std::string err = "monero_wallet_keys::get_account(account_idx, include_subaddresses) include_subaddresses must be false";
-      std::cout << err << std::endl;
+      MERROR(err);
       throw std::runtime_error(err);
     }
 
@@ -273,7 +273,7 @@ namespace monero {
     // must provide subaddress indices
     if (subaddress_indices.empty()) {
       std::string err = "Keys-only wallet does not have enumerable set of subaddresses; specific specific subaddresses";
-      std::cout << err << std::endl;
+      MERROR(err);
       throw std::runtime_error(err);
     }
 
@@ -292,12 +292,12 @@ namespace monero {
   }
 
   std::string monero_wallet_keys::sign_message(const std::string& msg, monero_message_signature_type signature_type, uint32_t account_idx, uint32_t subaddress_idx) const {
-    std::cout << "monero_wallet_keys::sign_message()" << std::endl;
+    MTRACE("monero_wallet_keys::sign_message()");
     throw std::runtime_error("monero_wallet_keys::sign_message() not implemented");
   }
 
   monero_message_signature_result monero_wallet_keys::verify_message(const std::string& msg, const std::string& address, const std::string& signature) const {
-    std::cout << "monero_wallet_keys::verify_message()" << std::endl;
+    MTRACE("monero_wallet_keys::verify_message()");
     throw std::runtime_error("monero_wallet_keys::verify_message() not implemented");
   }
 
