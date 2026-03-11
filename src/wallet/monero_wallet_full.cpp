@@ -1736,7 +1736,7 @@ namespace monero {
     subaddress.m_account_index = account_idx;
     subaddress.m_index = m_w2->get_num_subaddresses(account_idx) - 1;
     subaddress.m_address = m_w2->get_subaddress_as_str({account_idx, subaddress.m_index.get()});
-    subaddress.m_label = label;
+    if (!label.empty()) subaddress.m_label = label;
     subaddress.m_balance = 0;
     subaddress.m_unlocked_balance = 0;
     subaddress.m_num_unspent_outputs = 0;
@@ -3820,7 +3820,8 @@ namespace monero {
       uint32_t subaddress_idx = subaddress_indices_req.at(subaddressIndicesIdx);
       subaddress.m_index = subaddress_idx;
       subaddress.m_address = get_address(account_idx, subaddress_idx);
-      subaddress.m_label = m_w2->get_subaddress_label({account_idx, subaddress_idx});
+      std::string label = m_w2->get_subaddress_label({account_idx, subaddress_idx});
+      if (!label.empty()) subaddress.m_label = label;
       auto iter1 = balance_per_subaddress.find(subaddress_idx);
       subaddress.m_balance = iter1 == balance_per_subaddress.end() ? 0 : iter1->second;
       auto iter2 = unlocked_balance_per_subaddress.find(subaddress_idx);
