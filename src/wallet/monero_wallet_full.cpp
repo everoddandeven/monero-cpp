@@ -1325,6 +1325,13 @@ namespace monero {
       std::string password = std::string(wipeablePassword.data(), wipeablePassword.size());
       if (!password.empty()) connection->m_password = password;
     }
+
+    // normalize connection
+    if (connection->m_uri->empty()) connection->m_uri = boost::none;
+    if (connection->m_proxy_uri->empty()) connection->m_proxy_uri = boost::none;
+    if (connection->m_username != boost::none && connection->m_username->empty()) connection->m_username = boost::none;
+    if (connection->m_password != boost::none && connection->m_password->empty()) connection->m_password = boost::none;
+
     return connection;
   }
 
