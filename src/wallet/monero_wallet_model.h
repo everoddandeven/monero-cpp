@@ -135,7 +135,7 @@ namespace monero {
   /**
    * Models an outgoing transfer destination.
    */
-  struct monero_destination {
+  struct monero_destination : public serializable_struct  {
     boost::optional<std::string> m_address;
     boost::optional<uint64_t> m_amount;
 
@@ -155,7 +155,7 @@ namespace monero {
    *
    * TODO: m_is_incoming for api consistency
    */
-  struct monero_transfer : serializable_struct {
+  struct monero_transfer : public serializable_struct {
     std::shared_ptr<monero_tx_wallet> m_tx;
     boost::optional<uint64_t> m_amount;
     boost::optional<uint32_t> m_account_index;
@@ -460,7 +460,7 @@ namespace monero {
   /**
    * Models information about a multisig wallet.
    */
-  struct monero_multisig_info : serializable_struct {
+  struct monero_multisig_info : public serializable_struct {
     bool m_is_multisig;
     bool m_is_ready;
     uint32_t m_threshold;
@@ -474,7 +474,7 @@ namespace monero {
    * multisig wallet's address xor another multisig hex to share with
    * participants to create the wallet.
    */
-  struct monero_multisig_init_result : serializable_struct {
+  struct monero_multisig_init_result : public serializable_struct {
     boost::optional<std::string> m_address;
     boost::optional<std::string> m_multisig_hex;
 
@@ -484,7 +484,7 @@ namespace monero {
   /**
    * Models the result of signing multisig tx hex.
    */
-  struct monero_multisig_sign_result : serializable_struct {
+  struct monero_multisig_sign_result : public serializable_struct {
     boost::optional<std::string> m_signed_multisig_tx_hex;
     std::vector<std::string> m_tx_hashes;
 
@@ -494,7 +494,7 @@ namespace monero {
   /**
    * Monero address book entry model.
    */
-  struct monero_address_book_entry : serializable_struct {
+  struct monero_address_book_entry : public serializable_struct {
     boost::optional<uint64_t> m_index;  // TODO: not boost::optional
     boost::optional<std::string> m_address;
     boost::optional<std::string> m_description;
