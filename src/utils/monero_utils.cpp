@@ -58,6 +58,7 @@
 #include "mnemonics/english.h"
 #include "string_tools.h"
 #include "byte_stream.h"
+#include "gen_utils.h"
 
 using namespace cryptonote;
 using namespace monero_utils;
@@ -249,6 +250,16 @@ rapidjson::Value monero_utils::to_rapidjson_val(rapidjson::Document::AllocatorTy
   return value_arr;
 }
 
+rapidjson::Value monero_utils::to_rapidjson_val(rapidjson::Document::AllocatorType& allocator, const std::vector<int>& nums) {
+  rapidjson::Value value_arr(rapidjson::kArrayType);
+  rapidjson::Value value_num(rapidjson::kNumberType);
+  for (const auto& num : nums) {
+    value_num.SetInt(num);
+    value_arr.PushBack(value_num, allocator);
+  }
+  return value_arr;
+}
+
 rapidjson::Value monero_utils::to_rapidjson_val(rapidjson::Document::AllocatorType& allocator, const std::vector<uint8_t>& nums) {
   rapidjson::Value value_arr(rapidjson::kArrayType);
   rapidjson::Value value_num(rapidjson::kNumberType);
@@ -299,6 +310,10 @@ void monero_utils::deserialize(const std::string& json, boost::property_tree::pt
 }
 
 // ----------------------------------------------------------------------------
+
+bool monero_utils::bool_equals(bool val, const boost::optional<bool>& opt_val) {
+  return opt_val == boost::none ? false : val == *opt_val;
+}
 
 bool monero_utils::is_valid_language(const std::string& language) {
   std::vector<std::string> languages;
@@ -377,4 +392,108 @@ std::shared_ptr<monero_tx> monero_utils::cn_tx_to_tx(const cryptonote::transacti
 //  std::vector<std::vector<crypto::signature> > m_signatures;
 //  rct::rctSig m_rct_signatures;
 //  mutable size_t blob_size;
+}
+
+void monero_utils::binary_blocks_to_property_tree(const std::string &bin, boost::property_tree::ptree &node) {
+  std::string response_json;
+  monero_utils::binary_blocks_to_json(bin, response_json);
+  std::istringstream iss(response_json);
+  boost::property_tree::read_json(iss, node);
+
+  auto blocks = node.get_child("blocks");
+  boost::property_tree::ptree parsed_blocks;
+
+  for (auto &entry : blocks) {
+    const std::string &block_str = entry.second.get_value<std::string>();
+    parsed_blocks.push_back(std::make_pair("", gen_utils::parse_json_string(block_str)));
+  }
+
+  node.put_child("blocks", parsed_blocks);
+
+  auto txs = node.get_child("txs");
+  boost::property_tree::ptree all_txs;
+
+  for (auto &rpc_txs_entry : txs) {
+    boost::property_tree::ptree txs_for_block;
+    const auto &rpc_txs = rpc_txs_entry.second;
+
+    if (!rpc_txs.empty() || !rpc_txs.data().empty()) {
+      for (auto &tx_entry : rpc_txs) {
+        std::string tx_str = tx_entry.second.get_value<std::string>();
+
+        auto pos = tx_str.find(',');
+        if (pos != std::string::npos) {
+          tx_str.replace(pos, 1, "{");
+          tx_str += "}";
+        }
+
+        txs_for_block.push_back(std::make_pair("", gen_utils::parse_json_string(tx_str)));
+      }
+    }
+
+    all_txs.push_back(std::make_pair("", txs_for_block));
+  }
+
+  node.put_child("txs", all_txs);
+}
+
+void monero_utils::merge_tx(const std::shared_ptr<monero_tx_wallet>& tx, std::map<std::string, std::shared_ptr<monero_tx_wallet>>& tx_map, std::map<uint64_t, std::shared_ptr<monero_block>>& block_map) {
+  if (tx->m_hash == boost::none) throw std::runtime_error("Tx hash is not initialized");
+
+  // merge tx
+  std::map<std::string, std::shared_ptr<monero_tx_wallet>>::const_iterator tx_iter = tx_map.find(*tx->m_hash);
+  if (tx_iter == tx_map.end()) {
+    tx_map[*tx->m_hash] = tx; // cache new tx
+  } else {
+    std::shared_ptr<monero_tx_wallet>& a_tx = tx_map[*tx->m_hash];
+    a_tx->merge(a_tx, tx); // merge with existing tx
+  }
+
+  // merge tx's block if confirmed
+  if (tx->get_height() != boost::none) {
+    std::map<uint64_t, std::shared_ptr<monero_block>>::const_iterator block_iter = block_map.find(tx->get_height().get());
+    if (block_iter == block_map.end()) {
+      block_map[tx->get_height().get()] = tx->m_block.get(); // cache new block
+    } else {
+      std::shared_ptr<monero_block>& a_block = block_map[tx->get_height().get()];
+      a_block->merge(a_block, tx->m_block.get()); // merge with existing block
+    }
+  }
+}
+
+bool monero_utils::tx_height_less_than(const std::shared_ptr<monero_tx>& tx1, const std::shared_ptr<monero_tx>& tx2) {
+  if (tx1->m_block != boost::none && tx2->m_block != boost::none) return tx1->get_height() < tx2->get_height();
+  else if (tx1->m_block == boost::none) return false;
+  else return true;
+}
+
+bool monero_utils::incoming_transfer_before(const std::shared_ptr<monero_incoming_transfer>& transfer1, const std::shared_ptr<monero_incoming_transfer>& transfer2) {
+
+  // compare by height
+  if (tx_height_less_than(transfer1->m_tx, transfer2->m_tx)) return true;
+
+  // compare by account and subaddress index
+  if (transfer1->m_account_index.get() < transfer2->m_account_index.get()) return true;
+  else if (transfer1->m_account_index.get() == transfer2->m_account_index.get()) return transfer1->m_subaddress_index.get() < transfer2->m_subaddress_index.get();
+  else return false;
+}
+
+bool monero_utils::vout_before(const std::shared_ptr<monero_output>& o1, const std::shared_ptr<monero_output>& o2) {
+  if (o1 == o2) return false; // ignore equal references
+  std::shared_ptr<monero_output_wallet> ow1 = std::static_pointer_cast<monero_output_wallet>(o1);
+  std::shared_ptr<monero_output_wallet> ow2 = std::static_pointer_cast<monero_output_wallet>(o2);
+
+  // compare by height
+  if (tx_height_less_than(ow1->m_tx, ow2->m_tx)) return true;
+
+  // compare by account index, subaddress index, output index, then key image hex
+  if (ow1->m_account_index.get() < ow2->m_account_index.get()) return true;
+  if (ow1->m_account_index.get() == ow2->m_account_index.get()) {
+    if (ow1->m_subaddress_index.get() < ow2->m_subaddress_index.get()) return true;
+    if (ow1->m_subaddress_index.get() == ow2->m_subaddress_index.get()) {
+      if (ow1->m_index.get() < ow2->m_index.get()) return true;
+      if (ow1->m_index.get() == ow2->m_index.get()) throw std::runtime_error("Should never sort outputs with duplicate indices");
+    }
+  }
+  return false;
 }

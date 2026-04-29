@@ -156,7 +156,7 @@ namespace monero {
      *
      * @param connection is the connection to set
      */
-    virtual void set_daemon_connection(const boost::optional<monero_rpc_connection>& connection) {
+    virtual void set_daemon_connection(const boost::optional<std::shared_ptr<monero_rpc_connection>>& connection) {
       throw std::runtime_error("set_daemon_connection() not supported");
     }
 
@@ -165,7 +165,7 @@ namespace monero {
      *
      * @return the wallet's daemon connection
      */
-    virtual boost::optional<monero_rpc_connection> get_daemon_connection() const {
+    virtual boost::optional<std::shared_ptr<monero_rpc_connection>> get_daemon_connection() const {
       throw std::runtime_error("get_daemon_connection() not supported");
     }
 
@@ -638,6 +638,22 @@ namespace monero {
      */
     virtual monero_account create_account(const std::string& label = "") {
       throw std::runtime_error("create_account() not supported");
+    }
+
+    virtual void tag_accounts(const std::string& tag, const std::vector<uint32_t>& account_indices) {
+      throw std::runtime_error("tag_accounts() not supported");
+    }
+
+    virtual void untag_accounts(const std::vector<uint32_t>& account_indices) {
+      throw std::runtime_error("untag_accounts() not supported");
+    }
+
+    virtual std::vector<std::shared_ptr<monero_account_tag>> get_account_tags() {
+      throw std::runtime_error("get_account_tags() not supported");
+    }
+
+    virtual void set_account_tag_label(const std::string& tag, const std::string& label) {
+      throw std::runtime_error("set_account_tags() not supported");
     }
 
     /**
@@ -1380,5 +1396,13 @@ namespace monero {
     virtual void close(bool save = false) {
       throw std::runtime_error("close() not supported");
     }
+
+    /**
+    * Check if the wallet is closed.
+    */
+    virtual bool is_closed() const {
+      throw std::runtime_error("is_closed() not supported");
+    }
+
   };
 }

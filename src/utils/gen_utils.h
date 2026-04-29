@@ -58,6 +58,8 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/json_parser.hpp>
 #include <chrono>
 #include <thread>
 #include "include_base_utils.h"
@@ -87,6 +89,13 @@ namespace gen_utils
   */
   static void wait_for(uint64_t duration_ms) {
     std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
+  }
+
+  static boost::property_tree::ptree parse_json_string(const std::string &json) {
+    boost::property_tree::ptree pt;
+    std::istringstream iss(json);
+    boost::property_tree::read_json(iss, pt);
+    return pt;
   }
 
   // ------------------------- VALUE RECONCILATION ----------------------------

@@ -123,6 +123,7 @@ namespace monero_utils
   }
 
   rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator, const std::vector<std::string>& strs);
+  rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator, const std::vector<int>& nums);
   rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator, const std::vector<uint8_t>& nums);
   rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator, const std::vector<uint32_t>& nums);
   rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator, const std::vector<uint64_t>& nums);
@@ -174,6 +175,34 @@ namespace monero_utils
     CHECK_AND_ASSERT_MES(r, std::string(), "Failed to serialize rct signatures base");
     return ss.str();
   }
+
+  void binary_blocks_to_property_tree(const std::string &bin, boost::property_tree::ptree &node);
+
+  /**
+    * Merges a transaction into a unique set of transactions.
+    *
+    * @param tx is the transaction to merge into the existing txs
+    * @param tx_map maps tx hashes to txs
+    * @param block_map maps block heights to blocks
+    */
+  void merge_tx(const std::shared_ptr<monero_tx_wallet>& tx, std::map<std::string, std::shared_ptr<monero_tx_wallet>>& tx_map, std::map<uint64_t, std::shared_ptr<monero_block>>& block_map);
+
+  /**
+  * Returns true iff tx1's height is known to be less than tx2's height for sorting.
+  */
+  bool tx_height_less_than(const std::shared_ptr<monero_tx>& tx1, const std::shared_ptr<monero_tx>& tx2);
+
+  /**
+    * Returns true iff transfer1 is ordered before transfer2 by ascending account and subaddress indices.
+    */
+  bool incoming_transfer_before(const std::shared_ptr<monero_incoming_transfer>& transfer1, const std::shared_ptr<monero_incoming_transfer>& transfer2);
+
+  /**
+    * Returns true iff wallet vout1 is ordered before vout2 by ascending account and subaddress indices then index.
+    */
+  bool vout_before(const std::shared_ptr<monero_output>& o1, const std::shared_ptr<monero_output>& o2);
+
+  bool bool_equals(bool val, const boost::optional<bool>& opt_val);
 
   // ----------------------------- GATHER BLOCKS ------------------------------
 
