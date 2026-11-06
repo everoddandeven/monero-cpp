@@ -3,6 +3,7 @@
 A C++ library for creating Monero applications using RPC or native bindings to [monero v0.18.5.4 'Fluorine Fermi'](https://github.com/monero-project/monero/tree/v0.18.5.4).
 
 * Supports fully client-side wallets by wrapping [wallet2.h](https://github.com/monero-project/monero/blob/master/src/wallet/wallet2.h).
+* Supports a keys-only wallet, which has the keys, the seed and the addresses of an account and needs no daemon.
 * Supports wallet and daemon RPC clients.
 * Supports multisig, view-only, and offline wallets.
 * Uses a clearly defined [data model and API specification](https://woodser.github.io/monero-java/monero-spec.pdf) intended to be intuitive and robust.
@@ -225,6 +226,10 @@ For HTTPS daemon connections, set `SSL_CERT_FILE` to the absolute path of a trus
 
 * [monero-java](https://github.com/woodser/monero-java)
 * [monero-ts](https://github.com/woodser/monero-ts)
+* [monero-python](https://github.com/libmonero/monero-python)
+* [monero-c](https://github.com/libmonero/monero-c)
+* [monero-csharp](https://github.com/libmonero/monero-csharp)
+* [monero-kotlin](https://github.com/libmonero/monero-kotlin)
 
 ## License
 
