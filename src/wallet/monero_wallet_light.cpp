@@ -1512,6 +1512,7 @@ namespace monero {
 
   uint64_t monero_wallet_light::get_height() const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the scanned height while the sync thread refreshes the cache
     return m_cache->get_scanned_block_height() + 1;
   }
 
@@ -1550,31 +1551,37 @@ namespace monero {
 
   uint64_t monero_wallet_light::get_balance() const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balance while the sync thread recalculates it
     return m_cache->get_balance();
   }
 
   uint64_t monero_wallet_light::get_balance(uint32_t account_index) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balance while the sync thread recalculates it
     return m_cache->get_balance(account_index);
   }
 
   uint64_t monero_wallet_light::get_balance(uint32_t account_idx, uint32_t subaddress_idx) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balance while the sync thread recalculates it
     return m_cache->get_balance(account_idx, subaddress_idx);
   }
 
   uint64_t monero_wallet_light::get_unlocked_balance() const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balance while the sync thread recalculates it
     return m_cache->get_unlocked_balance();
   }
 
   uint64_t monero_wallet_light::get_unlocked_balance(uint32_t account_index) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balance while the sync thread recalculates it
     return m_cache->get_unlocked_balance(account_index);
   }
 
   uint64_t monero_wallet_light::get_unlocked_balance(uint32_t account_idx, uint32_t subaddress_idx) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balance while the sync thread recalculates it
     return m_cache->get_unlocked_balance(account_idx, subaddress_idx);
   }
 
@@ -1995,6 +2002,8 @@ namespace monero {
     // validate and parse tx hash
     crypto::hash txid;
     if (!epee::string_tools::hex_to_pod(tx_hash, txid)) throw std::runtime_error("TX hash has invalid format");
+
+    sync_op_lock op_lock(*this); // do not read the tx keys while another thread adds one
 
     crypto::secret_key tx_key;
     std::vector<crypto::secret_key> additional_tx_keys;
@@ -2544,6 +2553,7 @@ namespace monero {
   std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(const monero_tx_query& query) const {
     MTRACE("monero_wallet_light::get_txs(query)");
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the txs while the sync thread reassigns them
 
     // copy query
     std::shared_ptr<monero_tx_query> query_sp = std::make_shared<monero_tx_query>(query); // convert to shared pointer
@@ -2664,6 +2674,7 @@ namespace monero {
 
   std::vector<std::shared_ptr<monero_output_wallet>> monero_wallet_light::get_outputs(const monero_output_query& query) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the outputs while the sync thread reassigns them
     // get outputs directly if query does not require tx context (e.g. other outputs, transfers)
     if (!monero_output_query::is_contextual(query)) return get_outputs_aux(query);
 
