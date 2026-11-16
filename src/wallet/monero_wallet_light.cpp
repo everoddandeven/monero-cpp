@@ -1726,15 +1726,23 @@ namespace monero {
         failed.push_back(failure);
         continue;
       }
-      std::string change_pubkey;
-      std::shared_ptr<monero_tx_wallet> tx = monero_wallet_utils::ptx_to_tx(ptx, static_cast<cryptonote::network_type>(m_network_type), this, &change_pubkey);
-      tx->m_full_hex = full_hex;
-      m_cache->add_unconfirmed_tx(tx, change_pubkey);
-      // collect resulting hash
+      // the tx is on the network now, so a failure of the bookkeeping that follows is reported with its
+      // hash and the set is tried to its end like a submit that fails
       std::string pending_tx_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx));
+      try {
+        std::string change_pubkey;
+        std::shared_ptr<monero_tx_wallet> tx = monero_wallet_utils::ptx_to_tx(ptx, static_cast<cryptonote::network_type>(m_network_type), this, &change_pubkey);
+        tx->m_full_hex = full_hex;
+        m_cache->add_unconfirmed_tx(tx, change_pubkey);
+      } catch (const std::exception& e) {
+        failed.push_back(pending_tx_hash + " relayed but not tracked: " + e.what());
+        continue;
+      }
+      // collect resulting hash
       tx_hashes.push_back(pending_tx_hash);
     }
 
+    m_wallet_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of the funds that left, also when a later one failed
     if (!failed.empty()) {
       if (!tx_hashes.empty()) m_cache->calculate_balance(); // the transactions that relayed are in the cache
       std::string relayed_list;
@@ -1745,9 +1753,6 @@ namespace monero {
     }
 
     if (!tx_metadatas.empty()) m_cache->calculate_balance();
-
-    // notify listeners of spent funds
-    m_wallet_listener->on_spend_tx_hashes(tx_hashes);
 
     // return relayed tx hashes
     return tx_hashes;
@@ -1955,16 +1960,20 @@ namespace monero {
         continue;
       }
       tx_hashes.push_back(pending_tx_hash);
+      // the tx is on the network now, so a failure of the bookkeeping that follows is reported with its
+      // hash and the set is tried to its end like a submit that fails
       try {
         std::string change_pubkey;
         std::shared_ptr<monero_tx_wallet> tx = monero_wallet_utils::ptx_to_tx(ptx, static_cast<cryptonote::network_type>(m_network_type), this, &change_pubkey);
         m_cache->add_unconfirmed_tx(tx, change_pubkey);
       } catch (const std::exception &e) {
-        throw std::runtime_error(std::string("Failed to submit signed tx: ") + e.what());
+        refused.push_back(pending_tx_hash + " relayed but not tracked: " + e.what());
+        continue;
       }
     }
 
     m_wallet_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of spent funds
+    m_cache->calculate_balance(); // the pending spends change the balances, which a wallet that does not sync in the background keeps otherwise stale
     if (!refused.empty()) {
       std::string relayed_list;
       for (const auto& h : tx_hashes) relayed_list += (relayed_list.empty() ? "" : ", ") + h;
