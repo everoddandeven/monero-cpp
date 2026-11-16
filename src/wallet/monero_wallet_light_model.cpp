@@ -877,9 +877,11 @@ namespace monero {
       uint64_t change_amount = 0;
       if (tx->m_change_amount != boost::none) change_amount = tx->m_change_amount.get();
 
+      // the change of a pending tx goes to the account that sent it, and not always to the primary one
+      uint32_t change_account_idx = tx->m_outgoing_transfer != nullptr && tx->m_outgoing_transfer->m_account_index != boost::none ? tx->m_outgoing_transfer->m_account_index.get() : 0;
       m_balance += change_amount;
-      m_account_balance[0] += change_amount;
-      m_subaddress_balance[0][0] += change_amount;
+      m_account_balance[change_account_idx] += change_amount;
+      m_subaddress_balance[change_account_idx][0] += change_amount;
 
       for (const std::shared_ptr<monero_output> &out : tx->m_outputs) {
         std::shared_ptr<monero_output_wallet> output = std::dynamic_pointer_cast<monero_output_wallet>(out);
