@@ -408,6 +408,14 @@ namespace monero {
     uint64_t get_num_blocks_to_unlock(uint32_t account_idx, uint32_t subaddress_idx) const;
     void init_subaddress(monero_subaddress& subaddress) const;
 
+    /**
+     * Get the tx of a hash that the account received or sent, which throws when the store does not have it.
+     *
+     * @param hash is the hash of the tx
+     * @return the tx of the hash
+     */
+    std::shared_ptr<monero_tx_light> get_tx(const std::string& hash) const;
+
   private:
     mutable boost::recursive_mutex m_mutex;
     std::shared_ptr<monero_key_image_cache> m_key_image_cache;
@@ -417,8 +425,6 @@ namespace monero {
     std::vector<std::shared_ptr<monero_tx_light>> m_tx_list;
     serializable_unordered_map<std::string, std::shared_ptr<monero_tx_wallet>> m_self_constructed_txs;
     serializable_unordered_map<std::string, bool> m_spent_key_images;
-
-    std::shared_ptr<monero_tx_light> get_tx(const std::string& hash) const;
     void set_txs(monero_get_address_txs_response& response, const monero_get_address_info_response& addr_info_response);
 
     // blockchain

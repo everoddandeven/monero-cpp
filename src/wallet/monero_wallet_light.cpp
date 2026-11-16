@@ -2102,12 +2102,26 @@ namespace monero {
       received_amount = tx_builder.compute_amount_received(tx, _tx_key, additional_tx_keys, info.address);
     }
 
-    bool in_tx_pool = cached_tx->m_in_tx_pool != boost::none && cached_tx->m_in_tx_pool.get();
+    // a tx that the wallet relayed is in the pool until the next sync sees it in the chain: the state of
+    // the chain names it, and not the copy that the relay left, which stays in the pool forever
+    bool in_tx_pool;
     uint64_t num_confirmations = 0;
-    if (!in_tx_pool) {
-      uint64_t tx_height = cached_tx->get_height().value_or(0);
-      uint64_t chain_height = get_daemon_height();
-      if (chain_height > tx_height) num_confirmations = chain_height - tx_height;
+    try {
+      const auto tx = m_cache->get_tx(tx_hash);
+      in_tx_pool = tx->m_mempool.get();
+      if (!in_tx_pool) {
+        uint64_t tx_height = tx->m_height.get();
+        uint64_t chain_height = get_daemon_height();
+        if (chain_height > tx_height) num_confirmations = chain_height - tx_height;
+      }
+    } catch (const std::runtime_error&) {
+      // the tx is not in the store of the account yet, so only the copy of the relay tells its state
+      in_tx_pool = cached_tx->m_in_tx_pool != boost::none && cached_tx->m_in_tx_pool.get();
+      if (!in_tx_pool) {
+        uint64_t tx_height = cached_tx->get_height().value_or(0);
+        uint64_t chain_height = get_daemon_height();
+        if (chain_height > tx_height) num_confirmations = chain_height - tx_height;
+      }
     }
 
     std::shared_ptr<monero_check_tx> check_tx = std::make_shared<monero_check_tx>();
