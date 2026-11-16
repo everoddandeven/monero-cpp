@@ -2325,10 +2325,21 @@ namespace monero {
 
     tx_builder tx_builder(static_cast<cryptonote::network_type>(m_network_type), m_account.get_keys(), is_view_only(), *m_client, m_cache);
     std::vector<tools::wallet2::tx_construction_data> unsigned_construction_data;
+    // a sweep of many outputs relays one tx per iteration, so a build that fails after the first leaves
+    // them on the network that no returned list names: a build that fails is collected and the loop is
+    // tried to its end, and the report names the hashes that went out, so a caller that rebuilds knows
+    // what already pays
+    std::vector<std::string> failed;
 
     while (!unspent_outs.empty()) {
       cryptonote::blobdata tx_blob;
-      tools::wallet2::pending_tx ptx = tx_builder.build(subaddr_account_idx, {dest_address}, config.m_payment_id, {}, true, simple_priority, unspent_outs, fee_per_b, fee_mask, tx_blob);
+      tools::wallet2::pending_tx ptx;
+      try {
+        ptx = tx_builder.build(subaddr_account_idx, {dest_address}, config.m_payment_id, {}, true, simple_priority, unspent_outs, fee_per_b, fee_mask, tx_blob);
+      } catch (const std::exception& e) {
+        failed.push_back(e.what());
+        break;
+      }
       std::string full_hex = epee::string_tools::buff_to_hex_nodelimer(tx_blob);
 
       if (ptx.tx_key != crypto::null_skey) {
@@ -2388,6 +2399,14 @@ namespace monero {
       result.push_back(unconfirmed_tx);
 
       if (!is_view_only() && relayed) m_cache->add_unconfirmed_tx(tx, change_pubkey);
+    }
+
+    if (!failed.empty()) {
+      std::string relayed_list;
+      for (const auto& tx : result) relayed_list += (relayed_list.empty() ? "" : ", ") + tx->m_hash.get();
+      std::string failed_list;
+      for (const auto& f : failed) failed_list += (failed_list.empty() ? "" : "; ") + f;
+      throw std::runtime_error("failed to sweep " + std::to_string(failed.size()) + " of the remaining transactions" + (result.empty() ? std::string() : "; already relayed: " + relayed_list) + "; " + failed_list);
     }
 
     std::string unsigned_tx_hex;
