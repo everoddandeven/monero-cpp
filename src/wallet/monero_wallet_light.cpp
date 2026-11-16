@@ -2827,10 +2827,13 @@ namespace monero {
     struct block_notifier : monero_wallet_listener {
       boost::mutex* temp;
       boost::condition_variable* cv;
-      uint64_t last_height;
+      uint64_t last_height = 0;
+      bool notified = false;
       block_notifier(boost::mutex* temp, boost::condition_variable* cv) { this->temp = temp; this->cv = cv; }
       void on_new_block(uint64_t height) {
+        boost::mutex::scoped_lock lock(*temp);
         last_height = height;
+        notified = true;
         cv->notify_one();
       }
     } block_listener(&temp, &cv);
@@ -2838,15 +2841,20 @@ namespace monero {
     // register the listener
     add_listener(block_listener);
 
-    // wait until condition variable is notified
-    boost::mutex::scoped_lock lock(temp);
-    cv.wait(lock);
+    // wait until the listener reports a block, which a wallet that does not sync in the background
+    // never gets: the wait gives up after a minute instead of staying for one
+    uint64_t height;
+    {
+      boost::mutex::scoped_lock lock(temp);
+      cv.wait_for(lock, boost::chrono::minutes(1), [&block_listener]() { return block_listener.notified; });
+      height = block_listener.last_height;
+    }
 
     // unregister the listener
     remove_listener(block_listener);
 
     // return last height
-    return block_listener.last_height;
+    return height;
   }
 
   bool monero_wallet_light::is_multisig_import_needed() const {
