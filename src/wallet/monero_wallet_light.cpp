@@ -2840,8 +2840,10 @@ namespace monero {
   cryptonote::subaddress_index get_transaction_sender(const std::shared_ptr<monero_tx_light>& tx) {
     cryptonote::subaddress_index si = {0,0};
     for (const auto &output : tx->m_spent_outputs) {
-      si.major = output->m_sender->m_maj_i;
-      si.minor = output->m_sender->m_min_i;
+      if (output->m_sender != nullptr) { // sender is a monero-lws-specific field which spec-conformant servers omit
+        si.major = output->m_sender->m_maj_i;
+        si.minor = output->m_sender->m_min_i;
+      }
       break;
     }
     return si;
@@ -3217,7 +3219,10 @@ namespace monero {
   bool monero_wallet_light::is_spend_real(const std::shared_ptr<monero_spend>& spend) const {
     if (spend->m_key_image == boost::none) return false;
     std::string key_image = spend->m_key_image.get();
-    return is_key_image_ours(key_image, spend->m_tx_pub_key.get(), spend->m_out_index.get(), spend->m_sender->m_maj_i, spend->m_sender->m_min_i);
+    // sender is a monero-lws-specific field which spec-conformant servers omit; default to the primary address
+    uint32_t account_idx = spend->m_sender == nullptr ? 0 : spend->m_sender->m_maj_i;
+    uint32_t subaddress_idx = spend->m_sender == nullptr ? 0 : spend->m_sender->m_min_i;
+    return is_key_image_ours(key_image, spend->m_tx_pub_key.get(), spend->m_out_index.get(), account_idx, subaddress_idx);
   }
 
   void monero_wallet_light::run_sync_loop() {
