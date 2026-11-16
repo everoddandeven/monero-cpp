@@ -1047,7 +1047,7 @@ namespace monero {
 
         // build dummy input for notification // TODO: this provides one input with outgoing amount like monero-wallet-rpc client, use real inputs instead
         std::shared_ptr<monero_output_wallet> input = std::make_shared<monero_output_wallet>();
-        input->m_amount = tx->m_outgoing_transfer->m_amount.get() + tx->m_fee.get();
+        input->m_amount = tx->m_outgoing_transfer->m_amount.get() + tx->m_fee.value_or(0);
         input->m_account_index = tx->m_outgoing_transfer->m_account_index;
         if (tx->m_outgoing_transfer->m_subaddress_indices.size() == 1) input->m_subaddress_index = tx->m_outgoing_transfer->m_subaddress_indices[0]; // initialize if transfer sourced from single subaddress
         std::shared_ptr<monero_tx_wallet> tx_notify = std::make_shared<monero_tx_wallet>();
@@ -2943,7 +2943,7 @@ namespace monero {
     for (const auto &tx : m_cache->get_txs()) {
       uint64_t total_sent = tx->m_total_sent.get();
       uint64_t total_received = tx->m_total_received.get();
-      uint64_t fee = tx->m_fee.get();
+      uint64_t fee = tx->m_fee.value_or(0); // fee is a monero-lws-specific field which spec-conformant servers omit
       bool is_incoming = total_received > 0;
       bool is_outgoing = total_sent > 0;
       bool is_change = is_incoming && is_outgoing;
