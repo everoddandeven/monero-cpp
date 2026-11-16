@@ -1473,6 +1473,9 @@ namespace monero {
 
   void monero_wallet_light::scan_txs(const std::vector<std::string>& tx_ids) {
     assert_not_closed();
+    // a light wallet server has no call for the transactions of ids, so the wallet cannot scan them: it
+    // syncs, which picks up every transaction the server has for the account
+    if (!tx_ids.empty()) throw std::runtime_error("command not supported by light wallet: scanning transactions of ids");
     sync();
   }
 
@@ -2082,7 +2085,7 @@ namespace monero {
     // this wallet only has raw tx bytes cached for txs it itself built and relayed
     std::shared_ptr<monero_tx_wallet> cached_tx = m_cache->get_self_constructed_tx(tx_hash);
     if (cached_tx == nullptr || cached_tx->m_full_hex == boost::none || cached_tx->m_full_hex->empty()) {
-      throw std::runtime_error("No tx secret key is stored for this tx");
+      throw std::runtime_error("No tx is stored for this tx hash: a light wallet checks a tx key against the raw tx of one it built itself");
     }
 
     cryptonote::blobdata tx_blob;
