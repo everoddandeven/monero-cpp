@@ -981,6 +981,8 @@ namespace monero {
       const auto &out = unspent_outs[n];
       uint64_t out_amount = out->m_amount.get();
       auto internal_output_index = out->m_index.get();
+      // the index comes from the server: a garbage one would resize the prefix by billions of outputs
+      if (internal_output_index > 100000) throw std::runtime_error("output index is out of the range of a transaction: " + std::to_string(internal_output_index));
       std::string tx_hash = out->m_tx_hash.get();
       uint64_t unlock_time = get_tx(tx_hash)->m_unlock_time.get();
 
