@@ -2161,6 +2161,9 @@ namespace monero {
     MINFO("monero_wallet_light::create_txs()");
     assert_not_closed();
     if (is_multisig()) throw std::runtime_error("Multisig wallet not supported");
+    // a view-only wallet cannot sign what it builds, so a tx that it submits is garbage that the daemon
+    // refuses: it builds the unsigned set instead, which a full wallet signs and submits
+    if (config.m_relay != boost::none && config.m_relay.get() && is_view_only()) throw std::runtime_error("Cannot relay from a view-only wallet");
     if (!m_is_connected) throw std::runtime_error("Wallet is not connected to daemon");
 
     // validate config
