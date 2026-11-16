@@ -3085,7 +3085,9 @@ namespace monero {
     uint64_t num_confirmations;
     m_w2->check_tx_key(_tx_hash, _tx_key, additional_tx_keys, info.address, received_amount, in_tx_pool, num_confirmations);
     std::shared_ptr<monero_check_tx> check_tx = std::make_shared<monero_check_tx>();
-    check_tx->m_is_good = true; // check is good if we get this far
+    // a key that is not the one of the tx, or a tx that did not pay the address, receives nothing: the
+    // check says it is not good and not that it erred
+    check_tx->m_is_good = received_amount > 0;
     check_tx->m_received_amount = received_amount;
     check_tx->m_in_tx_pool = in_tx_pool;
     check_tx->m_num_confirmations = num_confirmations;
