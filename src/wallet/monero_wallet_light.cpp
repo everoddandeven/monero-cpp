@@ -1087,7 +1087,13 @@ namespace monero {
       return true;
     }
     catch (const monero_rpc_error& ex) {
-      return ex.code == 401;
+      // a light wallet server answers that the account of the keys does not exist with a forbidden, and
+      // never with the unauthorized of an http server
+      if (ex.code == 403) return false;
+      throw;
+    }
+    catch (const monero_error&) {
+      return false; // a server that does not answer has no wallet on it to find
     }
   }
 
