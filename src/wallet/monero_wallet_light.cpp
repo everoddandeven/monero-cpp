@@ -3289,10 +3289,16 @@ namespace monero {
   bool monero_wallet_light::is_spend_real(const std::shared_ptr<monero_spend>& spend) const {
     if (spend->m_key_image == boost::none) return false;
     std::string key_image = spend->m_key_image.get();
-    // sender is a monero-lws-specific field which spec-conformant servers omit; default to the primary address
-    uint32_t account_idx = spend->m_sender == nullptr ? 0 : spend->m_sender->m_maj_i;
-    uint32_t subaddress_idx = spend->m_sender == nullptr ? 0 : spend->m_sender->m_min_i;
-    return is_key_image_ours(key_image, spend->m_tx_pub_key.get(), spend->m_out_index.get(), account_idx, subaddress_idx);
+    if (spend->m_sender != nullptr) {
+      return is_key_image_ours(key_image, spend->m_tx_pub_key.get(), spend->m_out_index.get(), spend->m_sender->m_maj_i, spend->m_sender->m_min_i);
+    }
+    // sender is a monero-lws-specific field which spec-conformant servers omit: the spend does not say
+    // which subaddress it came from, so the key image is tested against every one the wallet knows, and
+    // not just the primary address, which would call the spends of the other subaddresses fake
+    for (const auto& kv : m_cache->m_subaddresses) {
+      if (is_key_image_ours(key_image, spend->m_tx_pub_key.get(), spend->m_out_index.get(), kv.second.major, kv.second.minor)) return true;
+    }
+    return false;
   }
 
   bool monero_wallet_light::is_spend_verifiable(const std::shared_ptr<monero_spend>& spend) const {
@@ -3300,9 +3306,15 @@ namespace monero {
     // cannot (is_key_image_ours returns false on the uncached path) so a candidate spend is only
     // verifiable when its key image was previously cached, e.g. by import_key_images
     if (!is_view_only()) return true;
-    uint32_t account_idx = spend->m_sender == nullptr ? 0 : spend->m_sender->m_maj_i;
-    uint32_t subaddress_idx = spend->m_sender == nullptr ? 0 : spend->m_sender->m_min_i;
-    return m_key_image_cache->get(spend->m_tx_pub_key.get(), spend->m_out_index.get(), account_idx, subaddress_idx) != nullptr;
+    if (spend->m_sender != nullptr) {
+      return m_key_image_cache->get(spend->m_tx_pub_key.get(), spend->m_out_index.get(), spend->m_sender->m_maj_i, spend->m_sender->m_min_i) != nullptr;
+    }
+    // the spend does not say which subaddress it came from, so the cache of imported key images is
+    // looked in at every subaddress the wallet knows, or the spends of the other ones stay unrefined
+    for (const auto& kv : m_cache->m_subaddresses) {
+      if (m_key_image_cache->get(spend->m_tx_pub_key.get(), spend->m_out_index.get(), kv.second.major, kv.second.minor) != nullptr) return true;
+    }
+    return false;
   }
 
   uint64_t monero_wallet_light::get_unrefined_spend_count() const {
