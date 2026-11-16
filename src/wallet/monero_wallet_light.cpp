@@ -1530,7 +1530,7 @@ namespace monero {
     const uint64_t from_height = restore_height > 0 ? restore_height - 1 : 0;
     auto response = m_client->import_request(from_height);
     if (response->m_import_fee != boost::none && response->m_import_fee.get() > 0) {
-      throw std::runtime_error("Payment is required to rescan blockchain: address " + response->m_payment_address.get() + ", amount " + std::to_string(response->m_import_fee.get()));
+      throw std::runtime_error("Payment is required to rescan blockchain: address " + response->m_payment_address.value_or("") + ", amount " + std::to_string(response->m_import_fee.get()));
     }
     // only update the cache once the server confirms the import took effect; otherwise wait for refresh()
     if (response->m_request_fullfilled != boost::none && response->m_request_fullfilled.get()) {
