@@ -3073,8 +3073,9 @@ namespace monero {
         }
 
         for (const auto& spent_output : tx->m_spent_outputs) {
-          uint32_t account_idx = spent_output->m_sender->m_maj_i;
-          uint32_t subaddress_idx = spent_output->m_sender->m_min_i;
+          // sender is a monero-lws-specific field which spec-conformant servers omit; default to the primary address
+          uint32_t account_idx = spent_output->m_sender == nullptr ? 0 : spent_output->m_sender->m_maj_i;
+          uint32_t subaddress_idx = spent_output->m_sender == nullptr ? 0 : spent_output->m_sender->m_min_i;
           uint64_t out_amount = spent_output->m_amount.get();
 
           if (account_idx == sender.major && std::find_if(outgoing_transfer->m_subaddress_indices.begin(), outgoing_transfer->m_subaddress_indices.end(), [subaddress_idx](const uint32_t &idx) { return subaddress_idx == idx; }) == outgoing_transfer->m_subaddress_indices.end()) {
