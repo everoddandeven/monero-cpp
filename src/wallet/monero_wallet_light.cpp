@@ -1376,16 +1376,19 @@ namespace monero {
 
   void monero_wallet_light::add_listener(monero_wallet_listener& listener) {
     assert_not_closed();
+    boost::lock_guard<boost::recursive_mutex> guard(m_listeners_mutex);
     m_listeners.insert(&listener);
   }
 
   void monero_wallet_light::remove_listener(monero_wallet_listener& listener) {
     assert_not_closed();
+    boost::lock_guard<boost::recursive_mutex> guard(m_listeners_mutex);
     m_listeners.erase(&listener);
   }
 
   std::set<monero_wallet_listener*> monero_wallet_light::get_listeners() {
     assert_not_closed();
+    boost::lock_guard<boost::recursive_mutex> guard(m_listeners_mutex);
     return m_listeners;
   }
 

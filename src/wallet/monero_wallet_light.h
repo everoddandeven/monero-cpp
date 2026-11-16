@@ -207,6 +207,7 @@ namespace monero {
     friend struct wallet_light_listener;
     std::unique_ptr<wallet_light_listener> m_wallet_listener; // internal wallet implementation listener
     std::set<monero_wallet_listener*> m_listeners;            // external wallet listeners
+    mutable boost::recursive_mutex m_listeners_mutex;         // guards m_listeners, which the sync and pool threads notify while the app thread changes it
 
     static monero_wallet_light* create_wallet_from_seed(monero_wallet_config& config, const std::shared_ptr<monero_rpc_connection>& rpc);
     static monero_wallet_light* create_wallet_from_keys(monero_wallet_config& config, const std::shared_ptr<monero_rpc_connection>& rpc);
