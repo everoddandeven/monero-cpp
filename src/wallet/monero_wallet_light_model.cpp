@@ -708,7 +708,7 @@ namespace monero {
       }
 
       for (const auto& output : kv.second) {
-        if (output->m_frozen.value_or(false) || get_num_blocks_to_unlock(output->m_tx_hash.get()) > 0) continue;
+        if (output->m_frozen.value_or(false) || (output->m_key_image != boost::none && m_frozen_key_images.count(output->m_key_image.get()) > 0) || get_num_blocks_to_unlock(output->m_tx_hash.get()) > 0) continue;
         if (output->is_key_image_known() && pool_key_images.count(output->m_key_image.get())) continue;
         spendable.push_back(output);
       }
@@ -936,13 +936,16 @@ namespace monero {
     auto it = m_key_image_index.find(key_image);
     if (it == m_key_image_index.end()) throw std::runtime_error("Key image not found");
     m_outputs[it->second]->m_frozen = frozen;
+    // the sync replaces the outputs, so the setting lives in the set of key images and not only on the object
+    if (frozen) m_frozen_key_images.insert(key_image);
+    else m_frozen_key_images.erase(key_image);
   }
 
   bool monero_wallet_light_cache::is_key_image_frozen(const std::string& key_image) const {
     validate_key_image(key_image);
     auto it = m_key_image_index.find(key_image);
     if (it == m_key_image_index.end()) throw std::runtime_error("Key image not found");
-    return m_outputs[it->second]->m_frozen.value_or(false);
+    return m_outputs[it->second]->m_frozen.value_or(false) || m_frozen_key_images.count(key_image) > 0;
   }
 
   std::shared_ptr<monero_output_light> monero_wallet_light_cache::get_output(const std::string& key_image) const {
