@@ -1130,7 +1130,13 @@ namespace monero {
   }
 
   uint64_t monero_wallet_light_cache::get_num_blocks_to_unlock(const std::string& tx_hash) const {
-    const auto& tx = get_tx(tx_hash);
+    // the address txs and the unspent outs arrive in two requests, so an output can name a tx that the
+    // txs response does not have: the output is treated as unlocked, which the next sync corrects, and
+    // not as an error that leaves the balance of a partial sync
+    boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
+    auto it = m_txs.find(tx_hash);
+    if (it == m_txs.end()) return 0;
+    const auto& tx = it->second;
     uint64_t current_height = get_scanned_block_height() + 1;
     uint64_t tx_height = tx->m_mempool.get() ? current_height : tx->m_height.get();
     uint64_t unlock_time = tx->m_unlock_time.get();
