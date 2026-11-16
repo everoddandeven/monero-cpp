@@ -989,7 +989,14 @@ namespace monero {
       // the index comes from the server: a garbage one would resize the prefix by billions of outputs
       if (internal_output_index > 100000) throw std::runtime_error("output index is out of the range of a transaction: " + std::to_string(internal_output_index));
       std::string tx_hash = out->m_tx_hash.get();
-      uint64_t unlock_time = get_tx(tx_hash)->m_unlock_time.get();
+      // the tx can be missing in the window of the two requests of a sync, like the unlock path: the
+      // prefix of the export carries no lock then, which the next export after the next sync corrects
+      uint64_t unlock_time;
+      {
+        boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
+        auto tx_it = m_txs.find(tx_hash);
+        unlock_time = tx_it == m_txs.end() ? 0 : tx_it->second->m_unlock_time.get();
+      }
 
       crypto::public_key public_key;
       crypto::public_key tx_pub_key;
