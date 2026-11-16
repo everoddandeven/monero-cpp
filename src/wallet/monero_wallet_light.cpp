@@ -3387,6 +3387,7 @@ namespace monero {
 
       if (new_height == last_height) {
         m_cache->set_sync_status(*addr_info);
+        m_wallet_listener->on_sync_end(); // end the sync the listeners started, or their bounds stay for the next one
         return result;
       }
 
