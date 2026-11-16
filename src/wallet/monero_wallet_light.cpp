@@ -1181,7 +1181,7 @@ namespace monero {
     if (offset_set) spend_key_sk = cryptonote::decrypt_key(spend_key_sk, config.m_seed_offset.get());
 
     // initialize wallet account
-    monero_wallet_light* wallet = new monero_wallet_light(rpc);
+    std::unique_ptr<monero_wallet_light> wallet(new monero_wallet_light(rpc)); // freed when the setup throws
     wallet->m_account = cryptonote::account_base{};
     crypto::secret_key spend_key_val = wallet->m_account.generate(spend_key_sk, true, false);
 
@@ -1206,7 +1206,7 @@ namespace monero {
     }
     else if (config.m_restore_height != boost::none) throw std::runtime_error("Cannote restore wallet from height: wallet is not connected to lws");
 
-    return wallet;
+    return wallet.release();
   }
 
   monero_wallet_light* monero_wallet_light::create_wallet_from_keys(monero_wallet_config& config, const std::shared_ptr<monero_rpc_connection>& rpc) {
@@ -1267,7 +1267,7 @@ namespace monero {
     }
 
     // initialize wallet account
-    monero_wallet_light* wallet = new monero_wallet_light(rpc);
+    std::unique_ptr<monero_wallet_light> wallet(new monero_wallet_light(rpc)); // freed when the setup throws
     if (has_spend_key && has_view_key) wallet->m_account.create_from_keys(address_info.address, spend_key_sk, view_key_sk);
     else if (has_spend_key) wallet->m_account.generate(spend_key_sk, true, false);
     else wallet->m_account.create_from_viewkey(address_info.address, view_key_sk);
@@ -1292,7 +1292,7 @@ namespace monero {
     }
     else if (config.m_restore_height != boost::none) throw std::runtime_error("Cannot restore wallet from height: wallet is not connected to lws");
 
-    return wallet;
+    return wallet.release();
   }
 
   monero_wallet_light* monero_wallet_light::create_wallet_random(monero_wallet_config& config, const std::shared_ptr<monero_rpc_connection>& rpc) {
@@ -1305,7 +1305,7 @@ namespace monero {
     if (!monero_utils::is_valid_language(config_normalized.m_language.get())) throw std::runtime_error("Unknown language: " + config_normalized.m_language.get());
 
     // initialize random wallet account
-    monero_wallet_light* wallet = new monero_wallet_light(rpc);
+    std::unique_ptr<monero_wallet_light> wallet(new monero_wallet_light(rpc)); // freed when the setup throws
     crypto::secret_key spend_key_sk = wallet->m_account.generate();
 
     // initialize remaining wallet
@@ -1328,7 +1328,7 @@ namespace monero {
       }
     }
 
-    return wallet;
+    return wallet.release();
   }
 
   // ----------------------------- WALLET METHODS -----------------------------
