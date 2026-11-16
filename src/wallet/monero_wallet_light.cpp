@@ -596,8 +596,8 @@ namespace monero {
       std::vector<cryptonote::tx_source_entry> sources;
       LOG_PRINT_L2("preparing outputs");
       for (size_t out_index = 0; out_index < outputs.size(); out_index++) {
+        if (outputs[out_index]->m_amount.get() > UINT64_MAX - found_money) throw std::runtime_error("input amount overflow");
         found_money += outputs[out_index]->m_amount.get();
-        if (found_money > UINT64_MAX) throw std::runtime_error("input amount overflow");
 
         auto src = cryptonote::tx_source_entry{};
         src.amount = outputs[out_index]->m_amount.get();
