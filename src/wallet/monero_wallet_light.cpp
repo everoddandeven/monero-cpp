@@ -186,16 +186,12 @@ namespace monero {
   // ----------------------- INTERNAL PRIVATE HELPERS -----------------------
 
   bool output_before(const std::shared_ptr<monero_output_light>& ow1, const std::shared_ptr<monero_output_light>& ow2) {
-    // compare by account index, subaddress index, output index, then global index
-    if (ow1->m_recipient->m_maj_i < ow2->m_recipient->m_maj_i) return true;
-    if (ow1->m_recipient->m_maj_i == ow2->m_recipient->m_maj_i) {
-      if (ow1->m_recipient->m_min_i < ow2->m_recipient->m_min_i) return true;
-      if (ow1->m_recipient->m_min_i == ow2->m_recipient->m_min_i) {
-        if (ow1->m_global_index.get() < ow2->m_global_index.get()) return true;
-        if (ow1->m_global_index.get() == ow2->m_global_index.get()) throw std::runtime_error("Should never sort outputs with duplicate indices");
-      }
-    }
-    return false;
+    // compare by account index, subaddress index, amount, then global index: the global index of a
+    // pre-rct output counts within its amount, so two outputs of different amounts can share it
+    if (ow1->m_recipient->m_maj_i != ow2->m_recipient->m_maj_i) return ow1->m_recipient->m_maj_i < ow2->m_recipient->m_maj_i;
+    if (ow1->m_recipient->m_min_i != ow2->m_recipient->m_min_i) return ow1->m_recipient->m_min_i < ow2->m_recipient->m_min_i;
+    if (ow1->m_amount.get() != ow2->m_amount.get()) return ow1->m_amount.get() < ow2->m_amount.get();
+    return ow1->m_global_index.get() < ow2->m_global_index.get();
   }
 
   void normalize_subaddress_indices(const std::shared_ptr<monero_tx_wallet>& tx, const tools::wallet2::pending_tx& ptx, const std::vector<std::shared_ptr<monero_output_light>>& outs) {
