@@ -600,6 +600,7 @@ namespace monero {
     for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
       std::string key = it->first;
       if (key == std::string("status")) response->m_status = it->second.data();
+      else if (key == std::string("not_relayed")) response->m_not_relayed = it->second.get_value<bool>();
     }
   }
 

@@ -317,6 +317,7 @@ namespace monero {
 
   struct monero_submit_raw_tx_response {
     boost::optional<std::string> m_status;
+    boost::optional<bool> m_not_relayed;
 
     static void from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_submit_raw_tx_response>& response);
   };
