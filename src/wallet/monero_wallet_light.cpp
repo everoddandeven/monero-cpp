@@ -1346,6 +1346,14 @@ namespace monero {
     return m_rpc;
   }
 
+  void monero_wallet_light::set_daemon_connection(const std::string& uri, const std::string& username, const std::string& password, const std::string& proxy_uri, const boost::optional<bool>& is_trusted) {
+    throw std::runtime_error("Cannot set daemon connection for light wallet: light wallets use a light wallet server (monero-lws), not a daemon");
+  }
+
+  void monero_wallet_light::set_daemon_connection(const std::shared_ptr<monero_rpc_connection>& connection, const boost::optional<bool>& is_trusted) {
+    throw std::runtime_error("Cannot set daemon connection for light wallet: light wallets use a light wallet server (monero-lws), not a daemon");
+  }
+
   bool monero_wallet_light::is_connected_to_daemon() const {
     assert_not_closed();
     m_is_connected = m_client->is_connected();

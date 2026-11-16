@@ -245,6 +245,13 @@ namespace monero {
     boost::mutex m_syncing_mutex;                    // synchronize auto sync loop
     void run_sync_loop();                            // run the sync loop in a thread
     monero_sync_result lock_and_sync(boost::optional<uint64_t> start_height = boost::none);  // internal function to synchronize request to sync and rescan
+    /**
+     * Light wallets sync from a light wallet server (monero-lws), never from a daemon, so
+     * setting a daemon connection is unsupported.
+     */
+    void set_daemon_connection(const std::string& uri, const std::string& username = "", const std::string& password = "", const std::string& proxy_uri = "", const boost::optional<bool>& is_trusted = boost::none) override;
+    void set_daemon_connection(const std::shared_ptr<monero_rpc_connection>& connection, const boost::optional<bool>& is_trusted = boost::none) override;
+
     monero_sync_result sync_aux(boost::optional<uint64_t> start_height = boost::none);       // internal function to immediately block, sync, and report progress
     std::atomic<uint64_t> m_unrefined_spend_count{0};  // candidate spends the last sync could not verify (view-only without cached key images)
 
