@@ -113,6 +113,8 @@ namespace monero {
   }
 
   void monero_output_light::from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_output_light>& output) {
+    // recipient is a monero-lws-specific field which spec-conformant servers omit; default to the primary address
+    output->m_recipient = std::make_shared<monero_address_meta>();
     for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
       std::string key = it->first;
       if (key == std::string("tx_id")) output->m_tx_id = it->second.get_value<uint64_t>();
