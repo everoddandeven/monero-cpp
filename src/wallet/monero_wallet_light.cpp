@@ -1632,6 +1632,7 @@ namespace monero {
 
   std::vector<monero_subaddress> monero_wallet_light::get_subaddresses(const uint32_t account_idx, const std::vector<uint32_t>& subaddress_indices) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balances while the sync thread recalculates them
     std::vector<monero_subaddress> subaddresses = get_subaddresses_aux(account_idx, subaddress_indices);
     for(monero_subaddress& subaddress : subaddresses) m_cache->init_subaddress(subaddress);
     return subaddresses;
@@ -1672,6 +1673,7 @@ namespace monero {
 
   monero_subaddress monero_wallet_light::get_subaddress(const uint32_t account_idx, const uint32_t subaddress_idx) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balances while the sync thread recalculates them
     std::vector<uint32_t> indices;
     indices.push_back(subaddress_idx);
     std::vector<monero_subaddress> subaddresses = monero_wallet_keys::get_subaddresses(account_idx, indices);
@@ -2604,6 +2606,7 @@ namespace monero {
 
   std::vector<std::shared_ptr<monero_transfer>> monero_wallet_light::get_transfers(const monero_transfer_query& query) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the transfers while the sync thread reassigns the txs
     // get transfers directly if query does not require tx context (e.g. other transfers, outputs)
     if (!monero_transfer_query::is_contextual(query)) return get_transfers_aux(query);
 
