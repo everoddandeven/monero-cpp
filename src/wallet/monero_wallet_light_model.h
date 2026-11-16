@@ -420,6 +420,9 @@ namespace monero {
     mutable boost::recursive_mutex m_mutex;
     std::shared_ptr<monero_key_image_cache> m_key_image_cache;
 
+    // the frozen key images, which a sync replaces the outputs they mark, so the setting outlives them
+    std::set<std::string> m_frozen_key_images;
+
     // transactions
     serializable_unordered_map<std::string, std::shared_ptr<monero_tx_light>> m_txs;
     std::vector<std::shared_ptr<monero_tx_light>> m_tx_list;
