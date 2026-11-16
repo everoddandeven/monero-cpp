@@ -1740,7 +1740,7 @@ namespace monero {
       std::shared_ptr<monero_submit_raw_tx_response> submit_res;
       try { submit_res = m_client->submit_raw_tx(full_hex); }
       catch (const std::exception& e) { failure = std::string("Failed to commit tx: ") + e.what(); }
-      if (failure.empty() && (submit_res == nullptr || submit_res->m_status == boost::none || submit_res->m_status.get() != std::string("OK"))) {
+      if (failure.empty() && (submit_res == nullptr || submit_res->m_status == boost::none || submit_res->m_status.get() != std::string("OK") || submit_res->m_not_relayed.value_or(false))) {
         failure = "Failed to commit tx" + (submit_res != nullptr && submit_res->m_status != boost::none ? (": " + submit_res->m_status.get()) : std::string());
       }
       if (!failure.empty()) {
@@ -1975,6 +1975,7 @@ namespace monero {
       try {
         const auto res = m_client->submit_raw_tx(epee::string_tools::buff_to_hex_nodelimer(cryptonote::tx_to_blob(ptx.tx)));
         if (res->m_status == boost::none || res->m_status.get() != std::string("OK")) failure = res->m_status ? *res->m_status : std::string("no status");
+        else if (res->m_not_relayed.value_or(false)) failure = "not relayed";
       } catch (const std::exception &e) { failure = e.what(); }
       if (!failure.empty()) {
         refused.push_back(pending_tx_hash + ": " + failure);
@@ -2255,7 +2256,7 @@ namespace monero {
       if (relay) {
         try {
           auto submit_res = m_client->submit_raw_tx(full_hex);
-          if (submit_res->m_status != boost::none && submit_res->m_status == std::string("OK")) {
+          if (submit_res->m_status != boost::none && submit_res->m_status == std::string("OK") && !submit_res->m_not_relayed.value_or(false)) {
             MINFO("monero_wallet_light::create_txs(): relayed tx");
             relayed = true;
           }
@@ -2385,7 +2386,7 @@ namespace monero {
       if (relay) {
         try {
           auto submit_res = m_client->submit_raw_tx(full_hex);
-          if (submit_res->m_status != boost::none && submit_res->m_status == std::string("OK")) {
+          if (submit_res->m_status != boost::none && submit_res->m_status == std::string("OK") && !submit_res->m_not_relayed.value_or(false)) {
             MINFO("monero_wallet_light::sweep_account(): relayed tx");
             relayed = true;
           }
@@ -2546,7 +2547,7 @@ namespace monero {
     if (relay) {
       try {
         auto submit_res = m_client->submit_raw_tx(full_hex);
-        if (submit_res->m_status != boost::none && submit_res->m_status == std::string("OK")) {
+        if (submit_res->m_status != boost::none && submit_res->m_status == std::string("OK") && !submit_res->m_not_relayed.value_or(false)) {
           MINFO("monero_wallet_light::sweep_output(): relayed tx");
           relayed = true;
         }
