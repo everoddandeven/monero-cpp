@@ -3566,6 +3566,9 @@ namespace monero {
       for (const auto& index_range : kv.second) {
         const uint32_t range_start = index_range->at(0);
         const uint32_t range_end = index_range->at(1);
+        // a server that answers a range of the whole space of an index would loop a derivation per index
+        // of it, and the last one wraps: no account holds more subaddresses than the server itself keeps
+        if (range_start > range_end || range_end - range_start > 16384) throw std::runtime_error("subaddress range is out of the range of an account: [" + std::to_string(range_start) + ", " + std::to_string(range_end) + "]");
         for (uint32_t i = range_start; i <= range_end; i++) {
           if (account_idx == 0 && i == 0) continue;
           if (has_watermark && i <= watermark) continue;
