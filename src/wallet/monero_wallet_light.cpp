@@ -3474,6 +3474,7 @@ namespace monero {
     const auto pool_key_images = m_cache->get_pool_key_images();
     for (auto& output : outputs) {
       if (!is_output_spent(output, pool_key_images)) continue;
+      if (total_amount < output->m_amount.get()) throw std::runtime_error("output amount exceeds the total amount of the server");
       total_amount -= output->m_amount.get();
     }
 
