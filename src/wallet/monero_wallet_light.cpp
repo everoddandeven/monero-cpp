@@ -2340,9 +2340,8 @@ namespace monero {
     tx_builder tx_builder(static_cast<cryptonote::network_type>(m_network_type), m_account.get_keys(), is_view_only(), *m_client, m_cache);
     std::vector<tools::wallet2::tx_construction_data> unsigned_construction_data;
     // a sweep of many outputs relays one tx per iteration, so a build that fails after the first leaves
-    // them on the network that no returned list names: a build that fails is collected and the loop is
-    // tried to its end, and the report names the hashes that went out, so a caller that rebuilds knows
-    // what already pays
+    // them on the network that no returned list names: the build that fails stops the loop, and the
+    // report names the hashes that went out, so a caller that rebuilds knows what already pays
     std::vector<std::string> failed;
 
     while (!unspent_outs.empty()) {
@@ -2417,7 +2416,7 @@ namespace monero {
 
     if (!failed.empty()) {
       std::string relayed_list;
-      for (const auto& tx : result) relayed_list += (relayed_list.empty() ? "" : ", ") + tx->m_hash.get();
+      for (const auto& tx : result) if (tx->m_is_relayed == true) relayed_list += (relayed_list.empty() ? "" : ", ") + tx->m_hash.get();
       std::string failed_list;
       for (const auto& f : failed) failed_list += (failed_list.empty() ? "" : "; ") + f;
       throw std::runtime_error("failed to sweep " + std::to_string(failed.size()) + " of the remaining transactions" + (result.empty() ? std::string() : "; already relayed: " + relayed_list) + "; " + failed_list);
