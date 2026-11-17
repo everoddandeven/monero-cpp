@@ -3567,13 +3567,15 @@ namespace monero {
         const uint32_t range_start = index_range->at(0);
         const uint32_t range_end = index_range->at(1);
         // a server that answers a range of the whole space of an index would loop a derivation per index
-        // of it, and the last one wraps: no account holds more subaddresses than the server itself keeps
+        // of it, and the last index of the space wraps when it counts up: no account holds more
+        // subaddresses than the server itself keeps, and the count runs where it cannot wrap
         if (range_start > range_end || range_end - range_start > 16384) throw std::runtime_error("subaddress range is out of the range of an account: [" + std::to_string(range_start) + ", " + std::to_string(range_end) + "]");
-        for (uint32_t i = range_start; i <= range_end; i++) {
-          if (account_idx == 0 && i == 0) continue;
-          if (has_watermark && i <= watermark) continue;
-          const auto& subaddress_spend_pub_key = hwdev.get_subaddress_spend_public_key(account_keys, {account_idx, i});
-          m_cache->m_subaddresses[subaddress_spend_pub_key] = {account_idx, i};
+        for (uint64_t i = range_start; i <= (uint64_t) range_end; i++) {
+          const uint32_t subaddress_idx = (uint32_t) i;
+          if (account_idx == 0 && subaddress_idx == 0) continue;
+          if (has_watermark && subaddress_idx <= watermark) continue;
+          const auto& subaddress_spend_pub_key = hwdev.get_subaddress_spend_public_key(account_keys, {account_idx, subaddress_idx});
+          m_cache->m_subaddresses[subaddress_spend_pub_key] = {account_idx, subaddress_idx};
         }
         if (range_end > highest) highest = range_end;
       }

@@ -215,9 +215,10 @@ namespace monero {
     if (size() != 2) return indices;
     uint32_t min_i = at(0);
     uint32_t maj_i = at(1);
-    // a range of the whole space of an index would fill the memory with indices, and the last one wraps
+    // a range of the whole space of an index would fill the memory with indices, and the last index of
+    // the space wraps when it counts up: the count runs where it cannot wrap
     if (min_i > maj_i || maj_i - min_i > 16384) throw std::runtime_error("subaddress range is out of the range of an account: [" + std::to_string(min_i) + ", " + std::to_string(maj_i) + "]");
-    for(uint32_t i = min_i; i <= maj_i; i++) indices.push_back(i);
+    for(uint64_t i = min_i; i <= (uint64_t) maj_i; i++) indices.push_back((uint32_t) i);
     return indices;
   }
 
