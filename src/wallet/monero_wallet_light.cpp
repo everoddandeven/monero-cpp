@@ -848,7 +848,7 @@ namespace monero {
         }
       }
 
-      if (!found && !additional_derivations.empty()) {
+      if (!found && output_index < additional_derivations.size()) {
         const crypto::key_derivation& additional_derivation = additional_derivations[output_index];
         if (cryptonote::out_can_be_to_acc(view_tag_opt, additional_derivation, output_index)) {
           if (!crypto::derive_public_key(additional_derivation, output_index, address.m_spend_public_key, derived_out_key)) throw std::runtime_error("Failed to derive public key");
