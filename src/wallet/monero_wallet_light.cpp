@@ -1759,9 +1759,10 @@ namespace monero {
       tx_hashes.push_back(pending_tx_hash);
     }
 
+    if (!failed.empty() && !tx_hashes.empty()) m_cache->calculate_balance(); // the transactions that relayed are in the cache
+    op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself, and the pool that runs it must not wait on this one
     m_wallet_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of the funds that left, also when a later one failed
     if (!failed.empty()) {
-      if (!tx_hashes.empty()) m_cache->calculate_balance(); // the transactions that relayed are in the cache
       std::string relayed_list;
       for (const auto& h : tx_hashes) relayed_list += (relayed_list.empty() ? "" : ", ") + h;
       std::string failed_list;
@@ -1990,8 +1991,9 @@ namespace monero {
       }
     }
 
-    m_wallet_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of spent funds
     m_cache->calculate_balance(); // the pending spends change the balances, which a wallet that does not sync in the background keeps otherwise stale
+    op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself, and the pool that runs it must not wait on this one
+    m_wallet_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of spent funds
     if (!refused.empty()) {
       std::string relayed_list;
       for (const auto& h : tx_hashes) relayed_list += (relayed_list.empty() ? "" : ", ") + h;
@@ -2302,6 +2304,7 @@ namespace monero {
 
     m_cache->calculate_balance();
 
+    op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself, and the pool that runs it must not wait on this one
     if (any_relayed) m_wallet_listener->on_spend_txs(result);
 
     return result;
@@ -2490,6 +2493,7 @@ namespace monero {
     }
 
     // notify listeners of spent funds
+    op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself, and the pool that runs it must not wait on this one
     if (config.m_relay != boost::none && config.m_relay.get()) m_wallet_listener->on_spend_txs(txs);
     return txs;
   }
@@ -2591,6 +2595,7 @@ namespace monero {
 
     m_cache->calculate_balance();
 
+    op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself, and the pool that runs it must not wait on this one
     if (relayed) m_wallet_listener->on_spend_txs(result);
 
     return unconfirmed_tx;
@@ -2948,9 +2953,15 @@ namespace monero {
     wallet.m_sync_data_mutex.lock();
   }
 
-  monero_wallet_light::sync_op_lock::~sync_op_lock() {
+  void monero_wallet_light::sync_op_lock::unlock() {
+    if (!m_locked) return;
+    m_locked = false;
     m_wallet.m_num_sync_pauses--; // resume background sync before unlocking so the sync does not yield to a finished operation
     m_wallet.m_sync_data_mutex.unlock();
+  }
+
+  monero_wallet_light::sync_op_lock::~sync_op_lock() {
+    unlock();
   }
 
   void monero_wallet_light::init_common() {
