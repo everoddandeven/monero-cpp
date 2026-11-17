@@ -1299,7 +1299,7 @@ namespace monero {
     if (out->is_key_image_known()) {
       output->m_key_image = std::make_shared<monero_key_image>();
       output->m_key_image.get()->m_hex = out->m_key_image;
-      output->m_is_frozen = out->m_frozen.value_or(false);
+      output->m_is_frozen = out->m_frozen.value_or(false) || (out->m_key_image != boost::none && m_frozen_key_images.count(out->m_key_image.get()) > 0);
       if (!*output->m_is_spent) output->m_is_spent = is_key_image_spent(out->m_key_image.get(), pool_key_images);
     }
 
