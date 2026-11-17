@@ -64,7 +64,6 @@
 #include <boost/thread/recursive_mutex.hpp>
 #include <algorithm>
 #include <cctype>
-#include <climits>
 #include <boost/thread/thread.hpp>
 #include <boost/thread/condition_variable.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
