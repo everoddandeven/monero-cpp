@@ -1759,7 +1759,7 @@ namespace monero {
       tx_hashes.push_back(pending_tx_hash);
     }
 
-    if (!failed.empty() && !tx_hashes.empty()) m_cache->calculate_balance(); // the transactions that relayed are in the cache
+    if (!tx_hashes.empty()) m_cache->calculate_balance(); // the transactions that relayed are in the cache
     op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself, and the pool that runs it must not wait on this one
     m_wallet_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of the funds that left, also when a later one failed
     if (!failed.empty()) {
@@ -1769,8 +1769,6 @@ namespace monero {
       for (const auto& f : failed) failed_list += (failed_list.empty() ? "" : "; ") + f;
       throw std::runtime_error("failed to relay " + std::to_string(failed.size()) + " of " + std::to_string(tx_metadatas.size()) + " transactions" + (tx_hashes.empty() ? std::string() : "; already relayed: " + relayed_list) + "; " + failed_list);
     }
-
-    if (!tx_metadatas.empty()) m_cache->calculate_balance();
 
     // return relayed tx hashes
     return tx_hashes;
