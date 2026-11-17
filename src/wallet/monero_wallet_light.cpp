@@ -1728,6 +1728,8 @@ namespace monero {
 
     if (!tx_metadatas.empty()) m_cache->calculate_balance();
 
+    op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself, and the pool that runs it must not wait on this one
+
     // notify listeners of spent funds
     m_wallet_listener->on_spend_tx_hashes(tx_hashes);
 
@@ -1934,6 +1936,9 @@ namespace monero {
         m_cache->add_unconfirmed_tx(tx, change_pubkey);
       }
 
+      m_cache->calculate_balance();
+
+      op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself, and the pool that runs it must not wait on this one
       m_wallet_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of spent funds
       return tx_hashes;
     } catch (const std::exception &e) {
@@ -2222,6 +2227,7 @@ namespace monero {
 
     m_cache->calculate_balance();
 
+    op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself, and the pool that runs it must not wait on this one
     if (any_relayed) m_wallet_listener->on_spend_txs(result);
 
     return result;
@@ -2389,6 +2395,7 @@ namespace monero {
     }
 
     // notify listeners of spent funds
+    op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself, and the pool that runs it must not wait on this one
     if (config.m_relay != boost::none && config.m_relay.get()) m_wallet_listener->on_spend_txs(txs);
     return txs;
   }
@@ -2487,6 +2494,7 @@ namespace monero {
 
     m_cache->calculate_balance();
 
+    op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself, and the pool that runs it must not wait on this one
     if (relayed) m_wallet_listener->on_spend_txs(result);
 
     return unconfirmed_tx;
@@ -2836,9 +2844,15 @@ namespace monero {
     wallet.m_sync_data_mutex.lock();
   }
 
-  monero_wallet_light::sync_op_lock::~sync_op_lock() {
+  void monero_wallet_light::sync_op_lock::unlock() {
+    if (!m_locked) return;
+    m_locked = false;
     m_wallet.m_num_sync_pauses--; // resume background sync before unlocking so the sync does not yield to a finished operation
     m_wallet.m_sync_data_mutex.unlock();
+  }
+
+  monero_wallet_light::sync_op_lock::~sync_op_lock() {
+    unlock();
   }
 
   void monero_wallet_light::init_common() {

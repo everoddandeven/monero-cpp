@@ -222,7 +222,9 @@ namespace monero {
       sync_op_lock(const monero_wallet_light& wallet);
       sync_op_lock(const sync_op_lock&) = delete;
       ~sync_op_lock();
+      void unlock(); // end the pause before the scope ends, for a listener that reads the wallet through its own lock
       const monero_wallet_light& m_wallet;
+      bool m_locked = true;
     };
 
     // blockchain sync management
