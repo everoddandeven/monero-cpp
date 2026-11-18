@@ -3493,7 +3493,9 @@ namespace monero {
 
       if (restore_height < current_height) {
         if (last_height < restore_height) last_height = restore_height;
-        uint64_t blocks_fetched = current_height - last_height;
+        // the server can name a start height above the height that the wallet scanned, which the subtraction
+        // below would wrap around on: the wallet fetched nothing then
+        uint64_t blocks_fetched = current_height > last_height ? current_height - last_height : 0;
         result.m_num_blocks_fetched = blocks_fetched;
 
         if (current_height > last_height) {
