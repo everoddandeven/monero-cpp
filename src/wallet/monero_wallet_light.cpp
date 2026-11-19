@@ -1755,6 +1755,13 @@ namespace monero {
       // hash and the set is tried to its end like a submit that fails
       std::string pending_tx_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx));
       try {
+        // the key of the transaction that the wallet built is stored with its hash, which the check of a
+        // payment reads: the wallet knows it only here, at the relay, since the construction made it
+        if (ptx.tx_key != crypto::null_skey) {
+          const crypto::hash txid = get_transaction_hash(ptx.tx);
+          m_cache->m_tx_keys[txid] = ptx.tx_key;
+          m_cache->m_additional_tx_keys[txid] = ptx.additional_tx_keys;
+        }
         std::string change_pubkey;
         std::shared_ptr<monero_tx_wallet> tx = monero_wallet_utils::ptx_to_tx(ptx, static_cast<cryptonote::network_type>(m_network_type), this, &change_pubkey);
         tx->m_full_hex = full_hex;
