@@ -765,6 +765,13 @@ namespace monero {
     m_fee_mask = std::min(response.m_fee_mask.value_or(0), MAX_SANE_FEE_MASK);
     m_amount = response.m_amount.value_or(0);
     m_outputs = std::move(response.m_outputs);
+    // a server that names an output twice counts its money twice and puts its key image twice in one
+    // transaction: the first of each one-time key is kept and the rest are dropped
+    std::unordered_set<std::string> seen_pub_keys;
+    m_outputs.erase(std::remove_if(m_outputs.begin(), m_outputs.end(), [&](const std::shared_ptr<monero_output_light>& output) {
+      if (output->m_public_key == boost::none) return false;
+      return !seen_pub_keys.insert(output->m_public_key.get()).second;
+    }), m_outputs.end());
     std::sort(m_outputs.begin(), m_outputs.end(), [](const std::shared_ptr<monero_output_light>& a, const std::shared_ptr<monero_output_light>& b) {
       return a->m_global_index.value_or(0) < b->m_global_index.value_or(0);
     });
