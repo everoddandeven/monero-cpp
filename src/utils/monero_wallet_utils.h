@@ -98,7 +98,7 @@ namespace monero_wallet_utils
    * @param view_secret_key private view key
    * @return pending txs from wallet2's internal data model
    */
-  std::vector<tools::wallet2::pending_tx> parse_signed_tx(const std::string &signed_tx_st, const crypto::secret_key &view_secret_key);
+  tools::wallet2::signed_tx_set parse_signed_tx(const std::string &signed_tx_st, const crypto::secret_key &view_secret_key);
 
   /**
    * Parse unsigned tx hex to wallet2's internal data model unsigned_tx_set.
