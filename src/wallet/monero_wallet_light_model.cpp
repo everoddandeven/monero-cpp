@@ -649,6 +649,11 @@ namespace monero {
     m_subaddrs->m_all_subaddrs = std::make_shared<monero_subaddrs>();
   }
 
+  monero_wallet_light_cache::~monero_wallet_light_cache() {
+    MTRACE("monero_wallet_light_cache::~monero_wallet_light_cache()");
+    for (auto& kv : m_self_constructed_txs) monero_utils::free(kv.second);
+  }
+
   std::vector<std::shared_ptr<monero_output_light>> monero_wallet_light_cache::get_outputs(uint32_t account_idx) const {
     auto all = get_spent(account_idx);
     auto unspent = get_unspent(account_idx);
