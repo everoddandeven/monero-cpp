@@ -53,6 +53,7 @@
 
 #include "monero_wallet_utils.h"
 #include "rpc/core_rpc_server_commands_defs.h"
+#include "wallet/pending_tx_validation.h"
 #include "storages/portable_storage_template_helper.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "mnemonics/electrum-words.h"
@@ -327,6 +328,12 @@ std::string monero_wallet_utils::dump_unsigned_tx(std::vector<tools::wallet2::tx
 }
 
 std::string monero_wallet_utils::sign_tx(tools::wallet2::unsigned_tx_set &exported_txs, std::vector<tools::wallet2::pending_tx> &txs, tools::wallet2::signed_tx_set &signed_txes, std::vector<std::string>& signed_kis, const cryptonote::account_base& account, const serializable_unordered_map<crypto::public_key, cryptonote::subaddress_index>& subaddresses) {
+  // the unsigned set is encrypted with the view key, which the server of a light wallet holds: a set
+  // that someone rewrote pays the destinations it says and not the ones the builder showed, which the
+  // check of the vendored wallet catches before anything is signed — the change addresses and the
+  // destinations are matched against the keys of the account that is about to sign
+  tools::wallet::sanity_check_unsigned_tx_set(exported_txs.txes, account.get_keys(), subaddresses);
+
   // sign the transactions
   for (size_t n = 0; n < exported_txs.txes.size(); ++n) {
     tools::wallet2::tx_construction_data &sd = exported_txs.txes[n];
