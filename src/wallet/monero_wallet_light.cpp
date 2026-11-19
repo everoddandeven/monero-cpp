@@ -2422,6 +2422,11 @@ namespace monero {
       if (!is_view_only() && relayed) m_cache->add_unconfirmed_tx(tx, change_pubkey);
     }
 
+    // the balance is recalculated before the failure is thrown, since the transactions that the sweep
+    // relayed moved the money whatever the failed ones did, and a wallet that does not sync in the
+    // background would keep a stale balance with the error
+    m_cache->calculate_balance();
+
     if (!failed.empty()) {
       std::string relayed_list;
       for (const auto& tx : result) if (tx->m_is_relayed == true) relayed_list += (relayed_list.empty() ? "" : ", ") + tx->m_hash.get();
@@ -2440,8 +2445,6 @@ namespace monero {
     tx_set->m_txs = result;
     for (size_t i = 0; i < result.size(); i++) result[i]->m_tx_set = tx_set;
     if (!unsigned_tx_hex.empty()) tx_set->m_unsigned_tx_hex = unsigned_tx_hex;
-
-    m_cache->calculate_balance();
 
     return result;
   }
