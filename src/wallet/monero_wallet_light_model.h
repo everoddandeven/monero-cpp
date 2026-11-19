@@ -434,6 +434,9 @@ namespace monero {
     serializable_unordered_map<std::string, std::shared_ptr<monero_tx_light>> m_txs;
     std::vector<std::shared_ptr<monero_tx_light>> m_tx_list;
     serializable_unordered_map<std::string, std::shared_ptr<monero_tx_wallet>> m_self_constructed_txs;
+    // the unix seconds that the wallet relayed its own transactions, which the demotion of the ones
+    // that the chain never held reads
+    std::unordered_map<std::string, uint64_t> m_self_constructed_tx_relay_times;
     serializable_unordered_map<std::string, bool> m_spent_key_images;
     void set_txs(monero_get_address_txs_response& response, const monero_get_address_info_response& addr_info_response);
 

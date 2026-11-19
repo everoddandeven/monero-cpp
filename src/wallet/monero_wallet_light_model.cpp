@@ -1107,6 +1107,33 @@ namespace monero {
       }
       m_txs[tx_hash] = std::move(tx);
     }
+
+    // a transaction of the wallet that the chain held and does not list anymore is back in the pool as
+    // far as the wallet knows, which the time it was relayed says is not true forever: the mempool of a
+    // node drops its transactions after a day, and one that the wallet relayed and that never came back
+    // failed, or its pending balance stays phantom forever
+    const uint64_t now = static_cast<uint64_t>(time(NULL));
+    for (auto& kv : m_self_constructed_txs) {
+      const auto& self_tx = kv.second;
+      if (self_tx == nullptr || self_tx->m_is_confirmed != true) continue;
+      if (tx_list_index.find(kv.first) != tx_list_index.end()) continue;
+      self_tx->m_is_confirmed = false;
+      self_tx->m_in_tx_pool = true;
+      self_tx->m_is_failed = false;
+      self_tx->m_block = nullptr;
+      m_self_constructed_tx_relay_times[kv.first] = now;
+    }
+    for (auto& kv : m_self_constructed_txs) {
+      const auto& self_tx = kv.second;
+      if (self_tx == nullptr || self_tx->m_is_confirmed == true || self_tx->m_is_failed == true) continue;
+      if (self_tx->m_is_relayed != true) continue;
+      auto relay_time_it = m_self_constructed_tx_relay_times.find(kv.first);
+      if (relay_time_it == m_self_constructed_tx_relay_times.end()) continue; // no relay time on record, which says nothing about the transaction
+      if (now < relay_time_it->second + CRYPTONOTE_MEMPOOL_TX_LIVETIME) continue;
+      self_tx->m_is_failed = true;
+      self_tx->m_in_tx_pool = false;
+    }
+
     if (m_block_reward == 0) m_block_reward = monero_wallet_utils::TAIL_EMISSION_REWARD;
 
     for (const auto &spend : addr_info_response.m_spent_outputs) {
@@ -1169,6 +1196,9 @@ namespace monero {
       tx->m_outputs.push_back(change_out);
     }
     m_self_constructed_txs[tx_hash] = tx;
+    // the relay of the wallet's own transaction starts the clock of its demotion: one that the chain
+    // never holds is failed after the mempool of a node drops it, which the refresh judges
+    if (tx->m_is_relayed == true) m_self_constructed_tx_relay_times[tx_hash] = static_cast<uint64_t>(time(NULL));
   }
 
   void monero_wallet_light_cache::for_each_unconfirmed_tx(const std::function<void(const std::string&, const std::shared_ptr<monero_tx_wallet>&)>& visitor) const {
