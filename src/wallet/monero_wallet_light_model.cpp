@@ -817,6 +817,12 @@ namespace monero {
     for (const auto &output : m_outputs) {
       output->m_cache_index = index;
 
+      // the outputs that a sync handed out are fresh objects, which take the frozen setting of their
+      // identity back: their key image is not derived yet, which the spend path derives when it needs it
+      if (output->m_tx_pub_key != boost::none && output->m_index != boost::none) {
+        if (m_frozen_output_identities.count(output->m_tx_pub_key.get() + ":" + std::to_string(output->m_index.get())) > 0) output->m_frozen = true;
+      }
+
       if (output->is_spent() || (output->is_key_image_known() && pool_key_images.count(output->m_key_image.get()))) {
         m_spent[output->m_recipient->m_maj_i][output->m_recipient->m_min_i].push_back(output);
       } else {
@@ -971,9 +977,18 @@ namespace monero {
     auto it = m_key_image_index.find(key_image);
     if (it == m_key_image_index.end()) throw std::runtime_error("Key image not found");
     m_outputs[it->second]->m_frozen = frozen;
-    // the sync replaces the outputs, so the setting lives in the set of key images and not only on the object
-    if (frozen) m_frozen_key_images.insert(key_image);
-    else m_frozen_key_images.erase(key_image);
+    // the sync replaces the outputs, so the setting lives in the sets and not only on the object: the key
+    // image for the spends and the identity for the outputs that a sync hands out before their key image
+    // is derived
+    std::string identity = m_outputs[it->second]->m_tx_pub_key.get() + ":" + std::to_string(m_outputs[it->second]->m_index.get());
+    if (frozen) {
+      m_frozen_key_images.insert(key_image);
+      m_frozen_output_identities.insert(identity);
+    }
+    else {
+      m_frozen_key_images.erase(key_image);
+      m_frozen_output_identities.erase(identity);
+    }
   }
 
   bool monero_wallet_light_cache::is_key_image_frozen(const std::string& key_image) const {
