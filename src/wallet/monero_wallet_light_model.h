@@ -429,6 +429,10 @@ namespace monero {
 
     // the frozen key images, which a sync replaces the outputs they mark, so the setting outlives them
     std::set<std::string> m_frozen_key_images;
+    // the outputs of a sync arrive without their key images, which the wallet derives only when it
+    // spends: the frozen setting also lives by the identity of the output, the one-time key of its
+    // transaction and its index in it, which every answer names
+    std::set<std::string> m_frozen_output_identities;
 
     // transactions
     serializable_unordered_map<std::string, std::shared_ptr<monero_tx_light>> m_txs;
