@@ -2692,6 +2692,9 @@ namespace monero {
         tx_map.erase(tx->m_hash.get());
         tx_iter = txs.erase(tx_iter);
         if (tx->m_block != nullptr) tx->m_block.get()->m_txs.erase(std::remove(tx->m_block.get()->m_txs.begin(), tx->m_block.get()->m_txs.end(), tx), tx->m_block.get()->m_txs.end()); // TODO, no way to use tx_iter?
+        // the transfers of the tx point at it and it points back at them, which nothing else holds
+        // now: the cycle is broken here or the tx leaks with every query that filters it out
+        monero_utils::free(tx);
       }
     }
     txs = queried_txs;
@@ -2744,12 +2747,20 @@ namespace monero {
     // get outputs directly if query does not require tx context (e.g. other outputs, transfers)
     if (!monero_output_query::is_contextual(query)) return get_outputs_aux(query);
 
-    // otherwise get txs with full models to fulfill query
+    // otherwise get txs with full models to fulfill query. the outputs that the query answers point
+    // back at their transactions, which the caller reads, so those stay: the transactions whose outputs
+    // the query filtered out are this query's own, and their cycles are broken here or they leak
     std::vector<std::shared_ptr<monero_output_wallet>> outputs;
-    for (const std::shared_ptr<monero_tx_wallet>& tx : get_txs(*query.m_tx_query)) {
+    std::vector<std::shared_ptr<monero_tx_wallet>> queried_txs = get_txs(*query.m_tx_query);
+    std::unordered_set<std::shared_ptr<monero_tx_wallet>> retained_txs;
+    for (const std::shared_ptr<monero_tx_wallet>& tx : queried_txs) {
       for (const std::shared_ptr<monero_output_wallet>& output : tx->filter_outputs_wallet(query)) { // collect queried outputs, erase if excluded
         outputs.push_back(output);
+        retained_txs.insert(output->m_tx != nullptr ? std::static_pointer_cast<monero_tx_wallet>(output->m_tx) : tx);
       }
+    }
+    for (const std::shared_ptr<monero_tx_wallet>& tx : queried_txs) {
+      if (retained_txs.find(tx) == retained_txs.end()) monero_utils::free(tx);
     }
     return outputs;
   }
