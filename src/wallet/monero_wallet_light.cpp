@@ -2788,7 +2788,13 @@ namespace monero {
 
       auto cached_key_image = m_key_image_cache->get(output->m_tx_pub_key.get(), output->m_index.get(), account_idx, subaddress_idx);
       if (cached_key_image != nullptr) key_image = cached_key_image;
-      else if (!is_view_only()) key_image = generate_key_image(output->m_tx_pub_key.get(), output->m_index.get(), account_idx, subaddress_idx);
+      else if (!is_view_only()) {
+        crypto::public_key expected_pub_key;
+        if (!epee::string_tools::hex_to_pod(output->m_public_key.get(), expected_pub_key)) throw std::runtime_error("Failed to parse output public key at index " + std::to_string(n));
+        crypto::public_key tx_pub_key;
+        if (!epee::string_tools::hex_to_pod(output->m_tx_pub_key.get(), tx_pub_key)) throw std::runtime_error("Failed to parse output tx public key at index " + std::to_string(n));
+        key_image = monero_utils::generate_key_image(tx_pub_key, output->m_index.get(), cryptonote::subaddress_index{account_idx, subaddress_idx}, m_account, boost::optional<crypto::public_key>(expected_pub_key));
+      }
       result->m_key_images.push_back(key_image);
     }
 
@@ -3336,7 +3342,13 @@ namespace monero {
 
     if (!spent && !output->is_key_image_known()) {
       try {
-        output->m_key_image = generate_key_image(tx_pub_key, output_idx, account_idx, subaddress_idx)->m_hex;
+        // the expected one-time key is the one the server names for the output, which the derivation
+        // checks itself against before it signs
+        crypto::public_key expected_pub_key;
+        if (!epee::string_tools::hex_to_pod(output->m_public_key.get(), expected_pub_key)) throw std::runtime_error("Failed to parse output public key");
+        crypto::public_key tx_pub_key_pod;
+        if (!epee::string_tools::hex_to_pod(tx_pub_key, tx_pub_key_pod)) throw std::runtime_error("Failed to parse output tx public key");
+        output->m_key_image = monero_utils::generate_key_image(tx_pub_key_pod, output_idx, cryptonote::subaddress_index{account_idx, subaddress_idx}, m_account, boost::optional<crypto::public_key>(expected_pub_key))->m_hex;
         // check key image is spent in unconfirmed transactions
         spent = m_cache->is_key_image_spent(output->m_key_image.get(), pool_key_images);
         checked_unconfirmed = true;
