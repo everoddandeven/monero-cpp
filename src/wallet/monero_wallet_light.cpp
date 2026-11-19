@@ -1907,6 +1907,10 @@ namespace monero {
   // implementation based on monero-project's wallet_rpc_server.cpp::on_sign_transfer()
   monero_tx_set monero_wallet_light::sign_txs(const std::string& unsigned_tx_hex) {
     assert_not_closed();
+    // the cache that the signing reads is the one the background sync replaces, which every other
+    // operation holds the op lock against: the signing holds it too, or it reads outputs that the sync
+    // frees under it
+    sync_op_lock op_lock(*this); // do not refresh while signing
     if (m_account.get_device().get_type() != hw::device::device_type::SOFTWARE) throw std::runtime_error("command not supported by HW wallet");
     if (is_view_only()) throw std::runtime_error("command not supported by view-only wallet");
 
