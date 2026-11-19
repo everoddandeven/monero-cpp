@@ -661,6 +661,14 @@ namespace monero {
           }
         }
         src.outputs.insert(src.outputs.begin() + real_output_index, real_oe);
+
+        // the ring takes its mixin count in distinct outputs, which a server that answers fewer, or the
+        // same one twice, would shrink: the signature would name a smaller ring than the transaction says
+        if (src.outputs.size() != MIXIN_SIZE + 1) throw std::runtime_error("not enough distinct outputs for mixing");
+        for (size_t j = 1; j < src.outputs.size(); ++j) {
+          if (src.outputs[j].first == src.outputs[j - 1].first) throw std::runtime_error("duplicate mixin output from light wallet server");
+        }
+
         crypto::public_key tx_pub_key = AUTO_VAL_INIT(tx_pub_key);
         if (!epee::string_tools::validate_hex(64, *outputs[out_index]->m_tx_pub_key)) throw std::runtime_error("given an invalid public key");
 
