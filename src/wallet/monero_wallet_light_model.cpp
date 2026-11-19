@@ -119,7 +119,11 @@ namespace monero {
       std::string key = it->first;
       if (key == std::string("tx_id")) output->m_tx_id = it->second.get_value<uint64_t>();
       else if (key == std::string("amount")) output->m_amount = gen_utils::uint64_t_cast(it->second.data());
-      else if (key == std::string("index")) output->m_index = it->second.get_value<uint64_t>();
+      else if (key == std::string("index")) {
+        uint64_t index = it->second.get_value<uint64_t>();
+        if (index > 0xffff) throw std::runtime_error("Output index from server is out of bounds");
+        output->m_index = index;
+      }
       else if (key == std::string("global_index")) output->m_global_index = gen_utils::uint64_t_cast(it->second.data());
       else if (key == std::string("rct")) output->m_rct = it->second.data();
       else if (key == std::string("tx_hash")) output->m_tx_hash = it->second.data();
@@ -172,6 +176,9 @@ namespace monero {
         for (boost::property_tree::ptree::const_iterator it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
           std::shared_ptr<monero_spend> out = std::make_shared<monero_spend>();
           monero_spend::from_property_tree(it2->second, out);
+          if (out->m_amount == boost::none || out->m_tx_pub_key == boost::none || out->m_out_index == boost::none) {
+            throw std::runtime_error("Light wallet server response is missing required spend fields");
+          }
           transaction->m_spent_outputs.push_back(out);
         }
       }
@@ -197,6 +204,9 @@ namespace monero {
         for (boost::property_tree::ptree::const_iterator it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
           std::shared_ptr<monero_output_light> out = std::make_shared<monero_output_light>();
           monero_output_light::from_property_tree(it2->second, out);
+          if (out->m_public_key == boost::none || out->m_global_index == boost::none) {
+            throw std::runtime_error("Light wallet server response is missing required decoy output fields");
+          }
           random_outputs->m_outputs.push_back(out);
         }
       }
