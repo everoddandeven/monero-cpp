@@ -226,7 +226,7 @@ std::shared_ptr<monero_tx_wallet> monero_wallet_utils::ptx_to_tx(const tools::wa
   return tx;
 }
 
-std::vector<tools::wallet2::pending_tx> monero_wallet_utils::parse_signed_tx(const std::string &signed_tx_st, const crypto::secret_key &view_secret_key) {
+tools::wallet2::signed_tx_set monero_wallet_utils::parse_signed_tx(const std::string &signed_tx_st, const crypto::secret_key &view_secret_key) {
   std::string s = signed_tx_st;
   tools::wallet2::signed_tx_set signed_txs;
 
@@ -257,7 +257,7 @@ std::vector<tools::wallet2::pending_tx> monero_wallet_utils::parse_signed_tx(con
   LOG_PRINT_L0("Loaded signed tx data from binary: " << signed_txs.ptx.size() << " transactions");
   for (auto &c_ptx: signed_txs.ptx) LOG_PRINT_L0(cryptonote::obj_to_json_str(c_ptx.tx));
 
-  return signed_txs.ptx;
+  return signed_txs;
 }
 
 tools::wallet2::unsigned_tx_set monero_wallet_utils::parse_unsigned_tx(const std::string &unsigned_tx_st, const crypto::secret_key &view_secret_key) {

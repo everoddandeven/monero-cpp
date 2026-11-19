@@ -1967,16 +1967,28 @@ namespace monero {
     cryptonote::blobdata blob;
     if (!epee::string_tools::parse_hexstr_to_binbuff(signed_tx_hex, blob)) throw std::runtime_error("Failed to parse hex.");
 
-    std::vector<tools::wallet2::pending_tx> ptx_vector;
-    try { ptx_vector = monero_wallet_utils::parse_signed_tx(blob, m_account.get_keys().m_view_secret_key); }
+    tools::wallet2::signed_tx_set signed_txs;
+    try { signed_txs = monero_wallet_utils::parse_signed_tx(blob, m_account.get_keys().m_view_secret_key); }
     catch (const std::exception &e) { throw std::runtime_error(std::string("Failed to parse signed tx: ") + e.what()); }
+
+    // the outputs of the wallet are named by the one-time key of their transaction and their index in it,
+    // which the spent outputs of the submitted transactions are matched against to attach their key images
+    std::unordered_map<std::string, size_t> identity_to_index;
+    identity_to_index.reserve(m_cache->m_outputs.size());
+    for (size_t j = 0; j < m_cache->m_outputs.size(); ++j) {
+      const auto& out = m_cache->m_outputs[j];
+      if (out->m_tx_pub_key == boost::none || out->m_index == boost::none) continue;
+      identity_to_index[out->m_tx_pub_key.get() + ":" + std::to_string(out->m_index.get())] = j;
+    }
+    hw::device& hwdev = m_account.get_device();
+    bool key_images_changed = false;
 
     // the transactions relay one by one, so a failure after the first leaves them on the network that no
     // returned list names: a submit that fails is collected per transaction and the set is tried to its end,
     // and the report names the hashes that went out, so a caller that rebuilds knows what already pays
     std::vector<std::string> refused;
     std::vector<std::string> tx_hashes;
-    for (auto &ptx: ptx_vector) {
+    for (auto &ptx: signed_txs.ptx) {
       std::string pending_tx_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx));
       std::string failure;
       try {
@@ -1992,14 +2004,75 @@ namespace monero {
       // the tx is on the network now, so a failure of the bookkeeping that follows is reported with its
       // hash and the set is tried to its end like a submit that fails
       try {
+        // the key images of the spent outputs are attached to them now that the transaction pays them,
+        // which the wallet's own outputs get from its spend key and the ones of a wallet that only reads
+        // from the signed set: without them the wallet cannot know what a submitted transaction spent
+        // until the server says it, which a submit of its own spending should not wait for
+        if (ptx.construction_data.sources.size() == ptx.tx.vin.size()) {
+          for (size_t j = 0; j < ptx.tx.vin.size(); ++j) {
+            const cryptonote::txin_to_key* in = boost::get<cryptonote::txin_to_key>(&ptx.tx.vin[j]);
+            if (in == nullptr) continue;
+            const auto& src = ptx.construction_data.sources[j];
+            std::string identity = epee::string_tools::pod_to_hex(src.real_out_tx_key) + ":" + std::to_string(src.real_output_in_tx_index);
+            auto pos_it = identity_to_index.find(identity);
+            if (pos_it == identity_to_index.end()) continue; // output no longer tracked, which the next sync corrects
+            auto& unspent_out = m_cache->m_outputs[pos_it->second];
+            std::string key_image_hex = epee::string_tools::pod_to_hex(in->k_image);
+            uint64_t out_index = unspent_out->m_index.get();
+            uint32_t account_idx = unspent_out->m_recipient->m_maj_i;
+            uint32_t subaddress_idx = unspent_out->m_recipient->m_min_i;
+            const std::string& tx_public_key = unspent_out->m_tx_pub_key.get();
+            unspent_out->m_key_image = key_image_hex;
+            m_cache->set_key_image(key_image_hex, pos_it->second);
+            if (m_key_image_cache->get(tx_public_key, out_index, account_idx, subaddress_idx) == nullptr) {
+              auto key_image = std::make_shared<monero_key_image>();
+              key_image->m_hex = key_image_hex;
+              m_key_image_cache->set(key_image, tx_public_key, out_index, account_idx, subaddress_idx);
+            }
+            key_images_changed = true;
+          }
+        } else MWARNING("submit_txs(): signed tx " << pending_tx_hash << " construction data does not match its own input count; relaying it without updating cached key images for its inputs");
+
         std::string change_pubkey;
         std::shared_ptr<monero_tx_wallet> tx = monero_wallet_utils::ptx_to_tx(ptx, static_cast<cryptonote::network_type>(m_network_type), this, &change_pubkey);
         m_cache->add_unconfirmed_tx(tx, change_pubkey);
+
+        // a wallet that only reads submits what another wallet signed, which names the key images of the
+        // outputs that the transaction pays its change: those are seeded too, so the wallet knows its own
+        // spending without waiting for the server
+        if (!signed_txs.tx_key_images.empty()) {
+          crypto::public_key tx_pub_key = cryptonote::get_tx_pub_key_from_extra(ptx.tx);
+          crypto::key_derivation derivation;
+          if (tx_pub_key != crypto::null_pkey && hwdev.generate_key_derivation(tx_pub_key, m_account.get_keys().m_view_secret_key, derivation)) {
+            std::vector<crypto::public_key> additional_tx_pub_keys = cryptonote::get_additional_tx_pub_keys_from_extra(ptx.tx.extra);
+            std::vector<crypto::key_derivation> additional_derivations(additional_tx_pub_keys.size());
+            for (size_t i = 0; i < additional_tx_pub_keys.size(); ++i) {
+              if (!hwdev.generate_key_derivation(additional_tx_pub_keys[i], m_account.get_keys().m_view_secret_key, additional_derivations[i])) {
+                additional_derivations[i] = crypto::key_derivation{};
+              }
+            }
+            for (size_t vout_idx = 0; vout_idx < ptx.tx.vout.size(); ++vout_idx) {
+              crypto::public_key out_key;
+              if (!cryptonote::get_output_public_key(ptx.tx.vout[vout_idx], out_key)) continue;
+              auto tx_ki_it = signed_txs.tx_key_images.find(out_key);
+              if (tx_ki_it == signed_txs.tx_key_images.end()) continue;
+              auto subaddr_recv_info = cryptonote::is_out_to_acc_precomp(m_cache->m_subaddresses, out_key, derivation, additional_derivations, vout_idx, hwdev, cryptonote::get_output_view_tag(ptx.tx.vout[vout_idx]));
+              if (!subaddr_recv_info) continue;
+              auto key_image = std::make_shared<monero_key_image>();
+              key_image->m_hex = epee::string_tools::pod_to_hex(tx_ki_it->second);
+              m_key_image_cache->set(key_image, epee::string_tools::pod_to_hex(tx_pub_key), vout_idx, subaddr_recv_info->index.major, subaddr_recv_info->index.minor);
+            }
+          }
+        }
       } catch (const std::exception &e) {
         refused.push_back(pending_tx_hash + " relayed but not tracked: " + e.what());
         continue;
       }
     }
+
+    // the attached key images moved the outputs between the spent and the unspent, which the buckets and
+    // the balance of the cache say wrong until they are derived again
+    if (key_images_changed) m_cache->reindex_outputs(m_cache->get_amount());
 
     m_cache->calculate_balance(); // the pending spends change the balances, which a wallet that does not sync in the background keeps otherwise stale
     op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself, and the pool that runs it must not wait on this one
@@ -2009,7 +2082,7 @@ namespace monero {
       for (const auto& h : tx_hashes) relayed_list += (relayed_list.empty() ? "" : ", ") + h;
       std::string refused_list;
       for (const auto& r : refused) refused_list += (refused_list.empty() ? "" : "; ") + r;
-      throw std::runtime_error("the server did not relay " + std::to_string(refused.size()) + " of " + std::to_string(ptx_vector.size()) + " transactions" + (tx_hashes.empty() ? std::string() : "; already relayed: " + relayed_list) + "; not relayed: " + refused_list);
+      throw std::runtime_error("the server did not relay " + std::to_string(refused.size()) + " of " + std::to_string(signed_txs.ptx.size()) + " transactions" + (tx_hashes.empty() ? std::string() : "; already relayed: " + relayed_list) + "; not relayed: " + refused_list);
     }
     return tx_hashes;
   }
