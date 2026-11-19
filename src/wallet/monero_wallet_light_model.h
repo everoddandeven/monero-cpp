@@ -400,7 +400,8 @@ namespace monero {
     void reindex_outputs(uint64_t amount);
     uint64_t get_per_byte_fee() const { return m_per_byte_fee; }
     uint64_t get_base_fee(uint32_t priority) const;
-    uint64_t get_fee_mask() const { return m_fee_mask; }
+    // a zero mask would divide by nothing in the fee computation, so it reads as one at the least
+    uint64_t get_fee_mask() const { return m_fee_mask == 0 ? 1 : m_fee_mask; }
     uint64_t get_amount() const { return m_amount; }
 
     // subaddresses

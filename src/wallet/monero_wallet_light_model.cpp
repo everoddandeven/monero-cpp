@@ -741,9 +741,13 @@ namespace monero {
 
   void monero_wallet_light_cache::set_outputs(monero_get_unspent_outs_response& response) {
     boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
+    // a server that omits the mask or answers zero would make the fee computation divide by it: the
+    // value is clamped to a sane bound and read as one at the least, which the fees of a real chain
+    // never notice but a hostile or broken answer cannot turn into a crash
+    static const uint64_t MAX_SANE_FEE_MASK = 1000000; // 100x today's real value
     m_per_byte_fee = response.m_per_byte_fee.value_or(0);
     m_fees = std::move(response.m_fees);
-    m_fee_mask = response.m_fee_mask.value_or(0);
+    m_fee_mask = std::min(response.m_fee_mask.value_or(0), MAX_SANE_FEE_MASK);
     m_amount = response.m_amount.value_or(0);
     m_outputs = std::move(response.m_outputs);
     std::sort(m_outputs.begin(), m_outputs.end(), [](const std::shared_ptr<monero_output_light>& a, const std::shared_ptr<monero_output_light>& b) {
