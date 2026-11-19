@@ -2135,12 +2135,16 @@ namespace monero {
     assert_not_closed();
     sync_op_lock op_lock(*this); // do not refresh while modifying outputs
     m_cache->set_key_image_frozen(key_image, true);
+    // the frozen money leaves the balance that the wallet answers, which the change of the flag has to
+    // recalculate or the wallet says it has money that its spend path refuses
+    m_cache->calculate_balance();
   }
 
   void monero_wallet_light::thaw_output(const std::string& key_image) {
     assert_not_closed();
     sync_op_lock op_lock(*this); // do not refresh while modifying outputs
     m_cache->set_key_image_frozen(key_image, false);
+    m_cache->calculate_balance();
   }
 
   bool monero_wallet_light::is_output_frozen(const std::string& key_image) {
