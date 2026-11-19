@@ -858,6 +858,11 @@ namespace monero {
 
         for(const auto &output : kv2.second) {
           if (output->is_key_image_known() && pool_key_images.count(output->m_key_image.get())) continue;
+          // an output that the wallet froze counts in the balance of neither the unlocked money nor the
+          // total: the spend path refuses it, and a balance that says it is there offers money that the
+          // wallet cannot send
+          bool frozen = output->m_frozen.value_or(false) || (output->m_key_image != boost::none && m_frozen_key_images.count(output->m_key_image.get()) > 0);
+          if (frozen) continue;
           bool locked = get_num_blocks_to_unlock(output->m_tx_hash.get()) > 0;
           uint64_t amount = output->m_amount.get();
           subaddress_balance += amount;
