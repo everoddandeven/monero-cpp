@@ -337,6 +337,11 @@ namespace monero {
 
   class monero_wallet_light_cache {
   public:
+    // the transactions that the wallet built point at the transfers that point back at them, which the
+    // shared pointers never break on their own: the destructor frees them or the wallet leaks a graph
+    // per transaction it made
+    ~monero_wallet_light_cache();
+
     std::vector<std::shared_ptr<monero_output_light>> m_outputs;
     std::shared_ptr<monero_subaddrs_response> m_subaddrs;
     serializable_unordered_map<crypto::public_key, cryptonote::subaddress_index> m_subaddresses;
