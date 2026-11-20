@@ -156,7 +156,9 @@ std::shared_ptr<monero_tx_wallet> monero_wallet_utils::ptx_to_tx(const tools::wa
       output->m_subaddress_index = subaddress_idx;
       output->m_is_spent = false;
       output->m_is_frozen = false;
-      bool is_change = cd.change_dts.amount > 0 && dest.amount == cd.change_dts.amount && change_output == nullptr;
+      // the change is the output that pays the address of the change, and not the first one of its
+      // amount, which a destination can share: wallet2 tells them apart the same way
+      bool is_change = cd.change_dts.amount > 0 && dest.addr == cd.change_dts.addr && change_output == nullptr;
       if (is_change) {
         change_output = output;
       }

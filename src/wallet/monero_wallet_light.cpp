@@ -596,8 +596,8 @@ namespace monero {
       std::vector<cryptonote::tx_source_entry> sources;
       LOG_PRINT_L2("preparing outputs");
       for (size_t out_index = 0; out_index < outputs.size(); out_index++) {
+        if (outputs[out_index]->m_amount.get() > UINT64_MAX - found_money) throw std::runtime_error("input amount overflow");
         found_money += outputs[out_index]->m_amount.get();
-        if (found_money > UINT64_MAX) throw std::runtime_error("input amount overflow");
 
         auto src = cryptonote::tx_source_entry{};
         src.amount = outputs[out_index]->m_amount.get();
@@ -1047,7 +1047,7 @@ namespace monero {
 
         // build dummy input for notification // TODO: this provides one input with outgoing amount like monero-wallet-rpc client, use real inputs instead
         std::shared_ptr<monero_output_wallet> input = std::make_shared<monero_output_wallet>();
-        input->m_amount = tx->m_outgoing_transfer->m_amount.get() + tx->m_fee.get();
+        input->m_amount = tx->m_outgoing_transfer->m_amount.get() + tx->m_fee.value_or(0);
         input->m_account_index = tx->m_outgoing_transfer->m_account_index;
         if (tx->m_outgoing_transfer->m_subaddress_indices.size() == 1) input->m_subaddress_index = tx->m_outgoing_transfer->m_subaddress_indices[0]; // initialize if transfer sourced from single subaddress
         std::shared_ptr<monero_tx_wallet> tx_notify = std::make_shared<monero_tx_wallet>();
@@ -1087,7 +1087,13 @@ namespace monero {
       return true;
     }
     catch (const monero_rpc_error& ex) {
-      return ex.code == 401;
+      // a light wallet server answers that the account of the keys does not exist with a forbidden, and
+      // never with the unauthorized of an http server
+      if (ex.code == 403) return false;
+      throw;
+    }
+    catch (const monero_error&) {
+      return false; // a server that does not answer has no wallet on it to find
     }
   }
 
@@ -1175,7 +1181,7 @@ namespace monero {
     if (offset_set) spend_key_sk = cryptonote::decrypt_key(spend_key_sk, config.m_seed_offset.get());
 
     // initialize wallet account
-    monero_wallet_light* wallet = new monero_wallet_light(rpc);
+    std::unique_ptr<monero_wallet_light> wallet(new monero_wallet_light(rpc)); // freed when the setup throws
     wallet->m_account = cryptonote::account_base{};
     crypto::secret_key spend_key_val = wallet->m_account.generate(spend_key_sk, true, false);
 
@@ -1200,7 +1206,7 @@ namespace monero {
     }
     else if (config.m_restore_height != boost::none) throw std::runtime_error("Cannote restore wallet from height: wallet is not connected to lws");
 
-    return wallet;
+    return wallet.release();
   }
 
   monero_wallet_light* monero_wallet_light::create_wallet_from_keys(monero_wallet_config& config, const std::shared_ptr<monero_rpc_connection>& rpc) {
@@ -1261,7 +1267,7 @@ namespace monero {
     }
 
     // initialize wallet account
-    monero_wallet_light* wallet = new monero_wallet_light(rpc);
+    std::unique_ptr<monero_wallet_light> wallet(new monero_wallet_light(rpc)); // freed when the setup throws
     if (has_spend_key && has_view_key) wallet->m_account.create_from_keys(address_info.address, spend_key_sk, view_key_sk);
     else if (has_spend_key) wallet->m_account.generate(spend_key_sk, true, false);
     else wallet->m_account.create_from_viewkey(address_info.address, view_key_sk);
@@ -1286,7 +1292,7 @@ namespace monero {
     }
     else if (config.m_restore_height != boost::none) throw std::runtime_error("Cannot restore wallet from height: wallet is not connected to lws");
 
-    return wallet;
+    return wallet.release();
   }
 
   monero_wallet_light* monero_wallet_light::create_wallet_random(monero_wallet_config& config, const std::shared_ptr<monero_rpc_connection>& rpc) {
@@ -1299,7 +1305,7 @@ namespace monero {
     if (!monero_utils::is_valid_language(config_normalized.m_language.get())) throw std::runtime_error("Unknown language: " + config_normalized.m_language.get());
 
     // initialize random wallet account
-    monero_wallet_light* wallet = new monero_wallet_light(rpc);
+    std::unique_ptr<monero_wallet_light> wallet(new monero_wallet_light(rpc)); // freed when the setup throws
     crypto::secret_key spend_key_sk = wallet->m_account.generate();
 
     // initialize remaining wallet
@@ -1322,7 +1328,7 @@ namespace monero {
       }
     }
 
-    return wallet;
+    return wallet.release();
   }
 
   // ----------------------------- WALLET METHODS -----------------------------
@@ -1344,6 +1350,14 @@ namespace monero {
   std::shared_ptr<monero_rpc_connection> monero_wallet_light::get_rpc_connection() const {
     assert_not_closed();
     return m_rpc;
+  }
+
+  void monero_wallet_light::set_daemon_connection(const std::string& uri, const std::string& username, const std::string& password, const std::string& proxy_uri, const boost::optional<bool>& is_trusted) {
+    throw std::runtime_error("Cannot set daemon connection for light wallet: light wallets use a light wallet server (monero-lws), not a daemon");
+  }
+
+  void monero_wallet_light::set_daemon_connection(const std::shared_ptr<monero_rpc_connection>& connection, const boost::optional<bool>& is_trusted) {
+    throw std::runtime_error("Cannot set daemon connection for light wallet: light wallets use a light wallet server (monero-lws), not a daemon");
   }
 
   bool monero_wallet_light::is_connected_to_daemon() const {
@@ -1376,16 +1390,19 @@ namespace monero {
 
   void monero_wallet_light::add_listener(monero_wallet_listener& listener) {
     assert_not_closed();
+    boost::lock_guard<boost::recursive_mutex> guard(m_listeners_mutex);
     m_listeners.insert(&listener);
   }
 
   void monero_wallet_light::remove_listener(monero_wallet_listener& listener) {
     assert_not_closed();
+    boost::lock_guard<boost::recursive_mutex> guard(m_listeners_mutex);
     m_listeners.erase(&listener);
   }
 
   std::set<monero_wallet_listener*> monero_wallet_light::get_listeners() {
     assert_not_closed();
+    boost::lock_guard<boost::recursive_mutex> guard(m_listeners_mutex);
     return m_listeners;
   }
 
@@ -1456,6 +1473,9 @@ namespace monero {
 
   void monero_wallet_light::scan_txs(const std::vector<std::string>& tx_ids) {
     assert_not_closed();
+    // a light wallet server has no call for the transactions of ids, so the wallet cannot scan them: it
+    // syncs, which picks up every transaction the server has for the account
+    if (!tx_ids.empty()) throw std::runtime_error("command not supported by light wallet: scanning transactions of ids");
     sync();
   }
 
@@ -1501,6 +1521,7 @@ namespace monero {
 
   uint64_t monero_wallet_light::get_height() const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the scanned height while the sync thread refreshes the cache
     return m_cache->get_scanned_block_height() + 1;
   }
 
@@ -1509,7 +1530,7 @@ namespace monero {
     const uint64_t from_height = restore_height > 0 ? restore_height - 1 : 0;
     auto response = m_client->import_request(from_height);
     if (response->m_import_fee != boost::none && response->m_import_fee.get() > 0) {
-      throw std::runtime_error("Payment is required to rescan blockchain: address " + response->m_payment_address.get() + ", amount " + std::to_string(response->m_import_fee.get()));
+      throw std::runtime_error("Payment is required to rescan blockchain: address " + response->m_payment_address.value_or("") + ", amount " + std::to_string(response->m_import_fee.get()));
     }
     // only update the cache once the server confirms the import took effect; otherwise wait for refresh()
     if (response->m_request_fullfilled != boost::none && response->m_request_fullfilled.get()) {
@@ -1539,31 +1560,37 @@ namespace monero {
 
   uint64_t monero_wallet_light::get_balance() const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balance while the sync thread recalculates it
     return m_cache->get_balance();
   }
 
   uint64_t monero_wallet_light::get_balance(uint32_t account_index) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balance while the sync thread recalculates it
     return m_cache->get_balance(account_index);
   }
 
   uint64_t monero_wallet_light::get_balance(uint32_t account_idx, uint32_t subaddress_idx) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balance while the sync thread recalculates it
     return m_cache->get_balance(account_idx, subaddress_idx);
   }
 
   uint64_t monero_wallet_light::get_unlocked_balance() const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balance while the sync thread recalculates it
     return m_cache->get_unlocked_balance();
   }
 
   uint64_t monero_wallet_light::get_unlocked_balance(uint32_t account_index) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balance while the sync thread recalculates it
     return m_cache->get_unlocked_balance(account_index);
   }
 
   uint64_t monero_wallet_light::get_unlocked_balance(uint32_t account_idx, uint32_t subaddress_idx) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balance while the sync thread recalculates it
     return m_cache->get_unlocked_balance(account_idx, subaddress_idx);
   }
 
@@ -1622,6 +1649,7 @@ namespace monero {
 
   std::vector<monero_subaddress> monero_wallet_light::get_subaddresses(const uint32_t account_idx, const std::vector<uint32_t>& subaddress_indices) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balances while the sync thread recalculates them
     std::vector<monero_subaddress> subaddresses = get_subaddresses_aux(account_idx, subaddress_indices);
     for(monero_subaddress& subaddress : subaddresses) m_cache->init_subaddress(subaddress);
     return subaddresses;
@@ -1662,6 +1690,7 @@ namespace monero {
 
   monero_subaddress monero_wallet_light::get_subaddress(const uint32_t account_idx, const uint32_t subaddress_idx) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the balances while the sync thread recalculates them
     std::vector<uint32_t> indices;
     indices.push_back(subaddress_idx);
     std::vector<monero_subaddress> subaddresses = monero_wallet_keys::get_subaddresses(account_idx, indices);
@@ -1675,8 +1704,12 @@ namespace monero {
     assert_not_closed();
     sync_op_lock op_lock(*this); // do not refresh while relaying txs
 
-    // relay each metadata as a tx
+    // relay each metadata as a tx; the transactions relay one by one, so a failure after the first leaves them
+    // on the network that no returned list names: a submit that fails is collected per transaction and the set
+    // is tried to its end, and the report names the hashes that went out, so a caller that rebuilds knows what
+    // already pays
     std::vector<std::string> tx_hashes;
+    std::vector<std::string> failed;
     for (const auto& tx_metadata : tx_metadatas) {
       // parse tx metadata hex
       cryptonote::blobdata blob;
@@ -1703,21 +1736,44 @@ namespace monero {
 
       // commit tx
       std::string full_hex = epee::string_tools::buff_to_hex_nodelimer(tx_to_blob(ptx.tx));
-      try { m_client->submit_raw_tx(full_hex); }
-      catch (const std::exception& e) { throw std::runtime_error("Failed to commit tx"); }
-      std::string change_pubkey;
-      std::shared_ptr<monero_tx_wallet> tx = monero_wallet_utils::ptx_to_tx(ptx, static_cast<cryptonote::network_type>(m_network_type), this, &change_pubkey);
-      tx->m_full_hex = full_hex;
-      m_cache->add_unconfirmed_tx(tx, change_pubkey);
-      // collect resulting hash
+      std::string failure;
+      std::shared_ptr<monero_submit_raw_tx_response> submit_res;
+      try { submit_res = m_client->submit_raw_tx(full_hex); }
+      catch (const std::exception& e) { failure = std::string("Failed to commit tx: ") + e.what(); }
+      if (failure.empty() && (submit_res == nullptr || submit_res->m_status == boost::none || submit_res->m_status.get() != std::string("OK") || submit_res->m_not_relayed.value_or(false))) {
+        failure = "Failed to commit tx" + (submit_res != nullptr && submit_res->m_status != boost::none ? (": " + submit_res->m_status.get()) : std::string());
+      }
+      if (!failure.empty()) {
+        failed.push_back(failure);
+        continue;
+      }
+      // the tx is on the network now, so a failure of the bookkeeping that follows is reported with its
+      // hash and the set is tried to its end like a submit that fails
       std::string pending_tx_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx));
+      try {
+        std::string change_pubkey;
+        std::shared_ptr<monero_tx_wallet> tx = monero_wallet_utils::ptx_to_tx(ptx, static_cast<cryptonote::network_type>(m_network_type), this, &change_pubkey);
+        tx->m_full_hex = full_hex;
+        m_cache->add_unconfirmed_tx(tx, change_pubkey);
+      } catch (const std::exception& e) {
+        failed.push_back(pending_tx_hash + " relayed but not tracked: " + e.what());
+        continue;
+      }
+      // collect resulting hash
       tx_hashes.push_back(pending_tx_hash);
     }
 
-    if (!tx_metadatas.empty()) m_cache->calculate_balance();
+    m_wallet_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of the funds that left, also when a later one failed
+    if (!failed.empty()) {
+      if (!tx_hashes.empty()) m_cache->calculate_balance(); // the transactions that relayed are in the cache
+      std::string relayed_list;
+      for (const auto& h : tx_hashes) relayed_list += (relayed_list.empty() ? "" : ", ") + h;
+      std::string failed_list;
+      for (const auto& f : failed) failed_list += (failed_list.empty() ? "" : "; ") + f;
+      throw std::runtime_error("failed to relay " + std::to_string(failed.size()) + " of " + std::to_string(tx_metadatas.size()) + " transactions" + (tx_hashes.empty() ? std::string() : "; already relayed: " + relayed_list) + "; " + failed_list);
+    }
 
-    // notify listeners of spent funds
-    m_wallet_listener->on_spend_tx_hashes(tx_hashes);
+    if (!tx_metadatas.empty()) m_cache->calculate_balance();
 
     // return relayed tx hashes
     return tx_hashes;
@@ -1908,25 +1964,46 @@ namespace monero {
     try { ptx_vector = monero_wallet_utils::parse_signed_tx(blob, m_account.get_keys().m_view_secret_key); }
     catch (const std::exception &e) { throw std::runtime_error(std::string("Failed to parse signed tx: ") + e.what()); }
 
-    try {
-      std::vector<std::string> tx_hashes;
-      for (auto &ptx: ptx_vector) {
+    // the transactions relay one by one, so a failure after the first leaves them on the network that no
+    // returned list names: a submit that fails is collected per transaction and the set is tried to its end,
+    // and the report names the hashes that went out, so a caller that rebuilds knows what already pays
+    std::vector<std::string> refused;
+    std::vector<std::string> tx_hashes;
+    for (auto &ptx: ptx_vector) {
+      std::string pending_tx_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx));
+      std::string failure;
+      try {
         const auto res = m_client->submit_raw_tx(epee::string_tools::buff_to_hex_nodelimer(cryptonote::tx_to_blob(ptx.tx)));
-        if (res->m_status == boost::none || res->m_status.get() != std::string("OK")) throw std::runtime_error("Could not relay tx" + signed_tx_hex);
-        crypto::hash txid;
-        txid = cryptonote::get_transaction_hash(ptx.tx);
-        std::string pending_tx_hash = epee::string_tools::pod_to_hex(txid);
-        tx_hashes.push_back(pending_tx_hash);
+        if (res->m_status == boost::none || res->m_status.get() != std::string("OK")) failure = res->m_status ? *res->m_status : std::string("no status");
+        else if (res->m_not_relayed.value_or(false)) failure = "not relayed";
+      } catch (const std::exception &e) { failure = e.what(); }
+      if (!failure.empty()) {
+        refused.push_back(pending_tx_hash + ": " + failure);
+        continue;
+      }
+      tx_hashes.push_back(pending_tx_hash);
+      // the tx is on the network now, so a failure of the bookkeeping that follows is reported with its
+      // hash and the set is tried to its end like a submit that fails
+      try {
         std::string change_pubkey;
         std::shared_ptr<monero_tx_wallet> tx = monero_wallet_utils::ptx_to_tx(ptx, static_cast<cryptonote::network_type>(m_network_type), this, &change_pubkey);
         m_cache->add_unconfirmed_tx(tx, change_pubkey);
+      } catch (const std::exception &e) {
+        refused.push_back(pending_tx_hash + " relayed but not tracked: " + e.what());
+        continue;
       }
-
-      m_wallet_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of spent funds
-      return tx_hashes;
-    } catch (const std::exception &e) {
-      throw std::runtime_error(std::string("Failed to submit signed tx: ") + e.what());
     }
+
+    m_wallet_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of spent funds
+    m_cache->calculate_balance(); // the pending spends change the balances, which a wallet that does not sync in the background keeps otherwise stale
+    if (!refused.empty()) {
+      std::string relayed_list;
+      for (const auto& h : tx_hashes) relayed_list += (relayed_list.empty() ? "" : ", ") + h;
+      std::string refused_list;
+      for (const auto& r : refused) refused_list += (refused_list.empty() ? "" : "; ") + r;
+      throw std::runtime_error("the server did not relay " + std::to_string(refused.size()) + " of " + std::to_string(ptx_vector.size()) + " transactions" + (tx_hashes.empty() ? std::string() : "; already relayed: " + relayed_list) + "; not relayed: " + refused_list);
+    }
+    return tx_hashes;
   }
 
   // implementation based on monero-project's wallet2::get_tx_key()
@@ -1937,6 +2014,8 @@ namespace monero {
     // validate and parse tx hash
     crypto::hash txid;
     if (!epee::string_tools::hex_to_pod(tx_hash, txid)) throw std::runtime_error("TX hash has invalid format");
+
+    sync_op_lock op_lock(*this); // do not read the tx keys while another thread adds one
 
     crypto::secret_key tx_key;
     std::vector<crypto::secret_key> additional_tx_keys;
@@ -2009,7 +2088,7 @@ namespace monero {
     // this wallet only has raw tx bytes cached for txs it itself built and relayed
     std::shared_ptr<monero_tx_wallet> cached_tx = m_cache->get_self_constructed_tx(tx_hash);
     if (cached_tx == nullptr || cached_tx->m_full_hex == boost::none || cached_tx->m_full_hex->empty()) {
-      throw std::runtime_error("No tx secret key is stored for this tx");
+      throw std::runtime_error("No tx is stored for this tx hash: a light wallet checks a tx key against the raw tx of one it built itself");
     }
 
     cryptonote::blobdata tx_blob;
@@ -2024,16 +2103,32 @@ namespace monero {
       received_amount = tx_builder.compute_amount_received(tx, _tx_key, additional_tx_keys, info.address);
     }
 
-    bool in_tx_pool = cached_tx->m_in_tx_pool != boost::none && cached_tx->m_in_tx_pool.get();
+    // a tx that the wallet relayed is in the pool until the next sync sees it in the chain: the state of
+    // the chain names it, and not the copy that the relay left, which stays in the pool forever
+    bool in_tx_pool;
     uint64_t num_confirmations = 0;
-    if (!in_tx_pool) {
-      uint64_t tx_height = cached_tx->get_height().value_or(0);
-      uint64_t chain_height = get_daemon_height();
-      if (chain_height > tx_height) num_confirmations = chain_height - tx_height;
+    try {
+      const auto tx = m_cache->get_tx(tx_hash);
+      in_tx_pool = tx->m_mempool.get();
+      if (!in_tx_pool) {
+        uint64_t tx_height = tx->m_height.get();
+        uint64_t chain_height = get_daemon_height();
+        if (chain_height > tx_height) num_confirmations = chain_height - tx_height;
+      }
+    } catch (const std::runtime_error&) {
+      // the tx is not in the store of the account yet, so only the copy of the relay tells its state
+      in_tx_pool = cached_tx->m_in_tx_pool != boost::none && cached_tx->m_in_tx_pool.get();
+      if (!in_tx_pool) {
+        uint64_t tx_height = cached_tx->get_height().value_or(0);
+        uint64_t chain_height = get_daemon_height();
+        if (chain_height > tx_height) num_confirmations = chain_height - tx_height;
+      }
     }
 
     std::shared_ptr<monero_check_tx> check_tx = std::make_shared<monero_check_tx>();
-    check_tx->m_is_good = true; // check is good if we get this far
+    // a key that is not the one of the tx, or a tx that did not pay the address, receives nothing: the
+    // check says it is not good and not that it erred
+    check_tx->m_is_good = received_amount > 0;
     check_tx->m_received_amount = received_amount;
     check_tx->m_in_tx_pool = in_tx_pool;
     check_tx->m_num_confirmations = num_confirmations;
@@ -2067,6 +2162,9 @@ namespace monero {
     MINFO("monero_wallet_light::create_txs()");
     assert_not_closed();
     if (is_multisig()) throw std::runtime_error("Multisig wallet not supported");
+    // a view-only wallet cannot sign what it builds, so a tx that it submits is garbage that the daemon
+    // refuses: it builds the unsigned set instead, which a full wallet signs and submits
+    if (config.m_relay != boost::none && config.m_relay.get() && is_view_only()) throw std::runtime_error("Cannot relay from a view-only wallet");
     if (!m_is_connected) throw std::runtime_error("Wallet is not connected to daemon");
 
     // validate config
@@ -2158,7 +2256,7 @@ namespace monero {
       if (relay) {
         try {
           auto submit_res = m_client->submit_raw_tx(full_hex);
-          if (submit_res->m_status != boost::none && submit_res->m_status == std::string("OK")) {
+          if (submit_res->m_status != boost::none && submit_res->m_status == std::string("OK") && !submit_res->m_not_relayed.value_or(false)) {
             MINFO("monero_wallet_light::create_txs(): relayed tx");
             relayed = true;
           }
@@ -2245,10 +2343,21 @@ namespace monero {
 
     tx_builder tx_builder(static_cast<cryptonote::network_type>(m_network_type), m_account.get_keys(), is_view_only(), *m_client, m_cache);
     std::vector<tools::wallet2::tx_construction_data> unsigned_construction_data;
+    // a sweep of many outputs relays one tx per iteration, so a build that fails after the first leaves
+    // them on the network that no returned list names: a build that fails is collected and the loop is
+    // tried to its end, and the report names the hashes that went out, so a caller that rebuilds knows
+    // what already pays
+    std::vector<std::string> failed;
 
     while (!unspent_outs.empty()) {
       cryptonote::blobdata tx_blob;
-      tools::wallet2::pending_tx ptx = tx_builder.build(subaddr_account_idx, {dest_address}, config.m_payment_id, {}, true, simple_priority, unspent_outs, fee_per_b, fee_mask, tx_blob);
+      tools::wallet2::pending_tx ptx;
+      try {
+        ptx = tx_builder.build(subaddr_account_idx, {dest_address}, config.m_payment_id, {}, true, simple_priority, unspent_outs, fee_per_b, fee_mask, tx_blob);
+      } catch (const std::exception& e) {
+        failed.push_back(e.what());
+        break;
+      }
       std::string full_hex = epee::string_tools::buff_to_hex_nodelimer(tx_blob);
 
       if (ptx.tx_key != crypto::null_skey) {
@@ -2277,7 +2386,7 @@ namespace monero {
       if (relay) {
         try {
           auto submit_res = m_client->submit_raw_tx(full_hex);
-          if (submit_res->m_status != boost::none && submit_res->m_status == std::string("OK")) {
+          if (submit_res->m_status != boost::none && submit_res->m_status == std::string("OK") && !submit_res->m_not_relayed.value_or(false)) {
             MINFO("monero_wallet_light::sweep_account(): relayed tx");
             relayed = true;
           }
@@ -2308,6 +2417,14 @@ namespace monero {
       result.push_back(unconfirmed_tx);
 
       if (!is_view_only() && relayed) m_cache->add_unconfirmed_tx(tx, change_pubkey);
+    }
+
+    if (!failed.empty()) {
+      std::string relayed_list;
+      for (const auto& tx : result) relayed_list += (relayed_list.empty() ? "" : ", ") + tx->m_hash.get();
+      std::string failed_list;
+      for (const auto& f : failed) failed_list += (failed_list.empty() ? "" : "; ") + f;
+      throw std::runtime_error("failed to sweep " + std::to_string(failed.size()) + " of the remaining transactions" + (result.empty() ? std::string() : "; already relayed: " + relayed_list) + "; " + failed_list);
     }
 
     std::string unsigned_tx_hex;
@@ -2430,7 +2547,7 @@ namespace monero {
     if (relay) {
       try {
         auto submit_res = m_client->submit_raw_tx(full_hex);
-        if (submit_res->m_status != boost::none && submit_res->m_status == std::string("OK")) {
+        if (submit_res->m_status != boost::none && submit_res->m_status == std::string("OK") && !submit_res->m_not_relayed.value_or(false)) {
           MINFO("monero_wallet_light::sweep_output(): relayed tx");
           relayed = true;
         }
@@ -2486,6 +2603,7 @@ namespace monero {
   std::vector<std::shared_ptr<monero_tx_wallet>> monero_wallet_light::get_txs(const monero_tx_query& query) const {
     MTRACE("monero_wallet_light::get_txs(query)");
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the txs while the sync thread reassigns them
 
     // copy query
     std::shared_ptr<monero_tx_query> query_sp = std::make_shared<monero_tx_query>(query); // convert to shared pointer
@@ -2591,6 +2709,7 @@ namespace monero {
 
   std::vector<std::shared_ptr<monero_transfer>> monero_wallet_light::get_transfers(const monero_transfer_query& query) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the transfers while the sync thread reassigns the txs
     // get transfers directly if query does not require tx context (e.g. other transfers, outputs)
     if (!monero_transfer_query::is_contextual(query)) return get_transfers_aux(query);
 
@@ -2606,6 +2725,7 @@ namespace monero {
 
   std::vector<std::shared_ptr<monero_output_wallet>> monero_wallet_light::get_outputs(const monero_output_query& query) const {
     assert_not_closed();
+    sync_op_lock op_lock(*this); // do not read the outputs while the sync thread reassigns them
     // get outputs directly if query does not require tx context (e.g. other outputs, transfers)
     if (!monero_output_query::is_contextual(query)) return get_outputs_aux(query);
 
@@ -2758,10 +2878,13 @@ namespace monero {
     struct block_notifier : monero_wallet_listener {
       boost::mutex* temp;
       boost::condition_variable* cv;
-      uint64_t last_height;
+      uint64_t last_height = 0;
+      bool notified = false;
       block_notifier(boost::mutex* temp, boost::condition_variable* cv) { this->temp = temp; this->cv = cv; }
       void on_new_block(uint64_t height) {
+        boost::mutex::scoped_lock lock(*temp);
         last_height = height;
+        notified = true;
         cv->notify_one();
       }
     } block_listener(&temp, &cv);
@@ -2769,15 +2892,20 @@ namespace monero {
     // register the listener
     add_listener(block_listener);
 
-    // wait until condition variable is notified
-    boost::mutex::scoped_lock lock(temp);
-    cv.wait(lock);
+    // wait until the listener reports a block, which a wallet that does not sync in the background
+    // never gets: the wait gives up after a minute instead of staying for one
+    uint64_t height;
+    {
+      boost::mutex::scoped_lock lock(temp);
+      cv.wait_for(lock, boost::chrono::minutes(1), [&block_listener]() { return block_listener.notified; });
+      height = block_listener.last_height;
+    }
 
     // unregister the listener
     remove_listener(block_listener);
 
     // return last height
-    return block_listener.last_height;
+    return height;
   }
 
   bool monero_wallet_light::is_multisig_import_needed() const {
@@ -2840,8 +2968,10 @@ namespace monero {
   cryptonote::subaddress_index get_transaction_sender(const std::shared_ptr<monero_tx_light>& tx) {
     cryptonote::subaddress_index si = {0,0};
     for (const auto &output : tx->m_spent_outputs) {
-      si.major = output->m_sender->m_maj_i;
-      si.minor = output->m_sender->m_min_i;
+      if (output->m_sender != nullptr) { // sender is a monero-lws-specific field which spec-conformant servers omit
+        si.major = output->m_sender->m_maj_i;
+        si.minor = output->m_sender->m_min_i;
+      }
       break;
     }
     return si;
@@ -2872,7 +3002,7 @@ namespace monero {
     for (const auto &tx : m_cache->get_txs()) {
       uint64_t total_sent = tx->m_total_sent.get();
       uint64_t total_received = tx->m_total_received.get();
-      uint64_t fee = tx->m_fee.get();
+      uint64_t fee = tx->m_fee.value_or(0); // fee is a monero-lws-specific field which spec-conformant servers omit
       bool is_incoming = total_received > 0;
       bool is_outgoing = total_sent > 0;
       bool is_change = is_incoming && is_outgoing;
@@ -3025,8 +3155,9 @@ namespace monero {
         }
 
         for (const auto& spent_output : tx->m_spent_outputs) {
-          uint32_t account_idx = spent_output->m_sender->m_maj_i;
-          uint32_t subaddress_idx = spent_output->m_sender->m_min_i;
+          // sender is a monero-lws-specific field which spec-conformant servers omit; default to the primary address
+          uint32_t account_idx = spent_output->m_sender == nullptr ? 0 : spent_output->m_sender->m_maj_i;
+          uint32_t subaddress_idx = spent_output->m_sender == nullptr ? 0 : spent_output->m_sender->m_min_i;
           uint64_t out_amount = spent_output->m_amount.get();
 
           if (account_idx == sender.major && std::find_if(outgoing_transfer->m_subaddress_indices.begin(), outgoing_transfer->m_subaddress_indices.end(), [subaddress_idx](const uint32_t &idx) { return subaddress_idx == idx; }) == outgoing_transfer->m_subaddress_indices.end()) {
@@ -3217,7 +3348,37 @@ namespace monero {
   bool monero_wallet_light::is_spend_real(const std::shared_ptr<monero_spend>& spend) const {
     if (spend->m_key_image == boost::none) return false;
     std::string key_image = spend->m_key_image.get();
-    return is_key_image_ours(key_image, spend->m_tx_pub_key.get(), spend->m_out_index.get(), spend->m_sender->m_maj_i, spend->m_sender->m_min_i);
+    if (spend->m_sender != nullptr) {
+      return is_key_image_ours(key_image, spend->m_tx_pub_key.get(), spend->m_out_index.get(), spend->m_sender->m_maj_i, spend->m_sender->m_min_i);
+    }
+    // sender is a monero-lws-specific field which spec-conformant servers omit: the spend does not say
+    // which subaddress it came from, so the key image is tested against every one the wallet knows, and
+    // not just the primary address, which would call the spends of the other subaddresses fake
+    for (const auto& kv : m_cache->m_subaddresses) {
+      if (is_key_image_ours(key_image, spend->m_tx_pub_key.get(), spend->m_out_index.get(), kv.second.major, kv.second.minor)) return true;
+    }
+    return false;
+  }
+
+  bool monero_wallet_light::is_spend_verifiable(const std::shared_ptr<monero_spend>& spend) const {
+    // a full wallet can always derive key images to verify candidate spends; a view-only wallet
+    // cannot (is_key_image_ours returns false on the uncached path) so a candidate spend is only
+    // verifiable when its key image was previously cached, e.g. by import_key_images
+    if (!is_view_only()) return true;
+    if (spend->m_sender != nullptr) {
+      return m_key_image_cache->get(spend->m_tx_pub_key.get(), spend->m_out_index.get(), spend->m_sender->m_maj_i, spend->m_sender->m_min_i) != nullptr;
+    }
+    // the spend does not say which subaddress it came from, so the cache of imported key images is
+    // looked in at every subaddress the wallet knows, or the spends of the other ones stay unrefined
+    for (const auto& kv : m_cache->m_subaddresses) {
+      if (m_key_image_cache->get(spend->m_tx_pub_key.get(), spend->m_out_index.get(), kv.second.major, kv.second.minor) != nullptr) return true;
+    }
+    return false;
+  }
+
+  uint64_t monero_wallet_light::get_unrefined_spend_count() const {
+    assert_not_closed();
+    return m_unrefined_spend_count;
   }
 
   void monero_wallet_light::run_sync_loop() {
@@ -3297,6 +3458,7 @@ namespace monero {
 
       if (new_height == last_height) {
         m_cache->set_sync_status(*addr_info);
+        m_wallet_listener->on_sync_end(); // end the sync the listeners started, or their bounds stay for the next one
         return result;
       }
 
@@ -3306,6 +3468,7 @@ namespace monero {
       monero_get_unspent_outs_response unspent_outs = *m_client->get_unspent_outs(0, 0);
       m_cache->m_subaddrs = m_client->get_subaddrs();
       process_subaddresses();
+      m_unrefined_spend_count = 0;
       process_txs(address_txs);
       unspent_outs.m_amount = process_outputs(unspent_outs.m_outputs, unspent_outs.m_amount.value_or(0));
       const uint64_t new_outs_amount = unspent_outs.m_amount.get();
@@ -3352,7 +3515,11 @@ namespace monero {
       size_t out_idx = 0;
 
       for (auto& spend : tx->m_spent_outputs) {
-        if (!is_spend_real(spend)) {
+        if (!is_spend_verifiable(spend)) {
+          // view-only wallet without a cached key image cannot disprove the candidate spend:
+          // keep the server's conservative amount so spent funds are not shown as available
+          m_unrefined_spend_count++;
+        } else if (!is_spend_real(spend)) {
           uint64_t spend_amount = spend->m_amount.get();
           if (spend_amount > tx_total_sent) throw std::runtime_error("tx total sent is negative: " + tx->m_hash.get());
           tx_total_sent -= spend_amount;
@@ -3378,6 +3545,7 @@ namespace monero {
     const auto pool_key_images = m_cache->get_pool_key_images();
     for (auto& output : outputs) {
       if (!is_output_spent(output, pool_key_images)) continue;
+      if (total_amount < output->m_amount.get()) throw std::runtime_error("output amount exceeds the total amount of the server");
       total_amount -= output->m_amount.get();
     }
 
@@ -3402,6 +3570,9 @@ namespace monero {
       for (const auto& index_range : kv.second) {
         const uint32_t range_start = index_range->at(0);
         const uint32_t range_end = index_range->at(1);
+        // a server that answers a range of the whole space of an index would loop a derivation per index
+        // of it, and the last one wraps: no account holds more subaddresses than the server itself keeps
+        if (range_start > range_end || range_end - range_start > 16384) throw std::runtime_error("subaddress range is out of the range of an account: [" + std::to_string(range_start) + ", " + std::to_string(range_end) + "]");
         for (uint32_t i = range_start; i <= range_end; i++) {
           if (account_idx == 0 && i == 0) continue;
           if (has_watermark && i <= watermark) continue;
