@@ -1321,6 +1321,10 @@ namespace monero {
       auto result = m_rpc->send_json_request("check_tx_key", params);
       check->m_is_good = true;
       deserialize_check_tx(result, check);
+      // the wallet behind the rpc answers the fields of the check and not whether the key checked out:
+      // the address received nothing when the key is not the one of the tx, which the other wallets
+      // derive the same way
+      check->m_is_good = check->m_received_amount != boost::none && check->m_received_amount.get() > 0;
     } catch (const monero_rpc_error& ex) {
       normalize_wallet_error(ex);
     }

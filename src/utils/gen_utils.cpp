@@ -72,7 +72,27 @@ std::string gen_utils::serialize(const boost::property_tree::ptree& node) {
   return str.substr(0, str.size() - 1); // strip newline
 }
 
+// the depth that a server answer may nest, which the scan below counts before the parse: the reader of
+// the property tree recurses per level without a limit, which a hostile or broken answer turns into a
+// crash of the process instead of an error
+static const size_t MAX_JSON_DEPTH = 64;
+
 void gen_utils::deserialize(const std::string& json, boost::property_tree::ptree& root) {
+  size_t depth = 0;
+  bool in_string = false;
+  for (size_t i = 0; i < json.size(); i++) {
+    char c = json[i];
+    if (in_string) {
+      if (c == '\\') i++;
+      else if (c == '"') in_string = false;
+    } else if (c == '"') {
+      in_string = true;
+    } else if (c == '[' || c == '{') {
+      if (++depth > MAX_JSON_DEPTH) throw std::runtime_error("Invalid JSON: nested deeper than " + std::to_string(MAX_JSON_DEPTH) + " levels");
+    } else if ((c == ']' || c == '}') && depth > 0) {
+      depth--;
+    }
+  }
   std::istringstream iss = json.empty() ? std::istringstream() : std::istringstream(json);
   try {
     boost::property_tree::read_json(iss, root);

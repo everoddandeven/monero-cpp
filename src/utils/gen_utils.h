@@ -62,6 +62,8 @@
 #include <boost/property_tree/json_parser.hpp>
 #include "rapidjson/document.h"
 #include <boost/thread/recursive_mutex.hpp>
+#include <algorithm>
+#include <cctype>
 #include <boost/thread/thread.hpp>
 #include <boost/thread/condition_variable.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -91,27 +93,19 @@ namespace gen_utils
   }
 
   static bool is_uint64_t(const std::string& str) {
+    if (str.empty() || !std::all_of(str.begin(), str.end(), [](char c) { return std::isdigit(static_cast<unsigned char>(c)); })) return false;
     try {
       size_t sz;
-      std::stol(str, &sz);
+      std::stoull(str, &sz);
       return sz == str.size();
     }
-    catch (const std::invalid_argument&) {
-      // if no conversion could be performed.
-      return false;   
-    }
-    catch (const std::out_of_range&) {
-      //  if the converted value would fall out of the range of the result type.
-      return false;
-    }
+    catch (const std::invalid_argument&) { return false; }
+    catch (const std::out_of_range&) { return false; }
   }
 
   static uint64_t uint64_t_cast(const std::string& str) {
     if (!is_uint64_t(str)) throw std::out_of_range("String provided is not a valid uint64_t");
-    uint64_t value;
-    std::istringstream itr(str);
-    itr >> value;
-    return value;
+    return std::stoull(str);
   }
 
   static uint64_t timestamp_to_epoch(const std::string& iso_timestamp) {
