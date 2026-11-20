@@ -113,6 +113,8 @@ namespace monero {
   }
 
   void monero_output_light::from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_output_light>& output) {
+    // recipient is a monero-lws-specific field which spec-conformant servers omit; default to the primary address
+    output->m_recipient = std::make_shared<monero_address_meta>();
     for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
       std::string key = it->first;
       if (key == std::string("tx_id")) output->m_tx_id = it->second.get_value<uint64_t>();
@@ -979,6 +981,8 @@ namespace monero {
       const auto &out = unspent_outs[n];
       uint64_t out_amount = out->m_amount.get();
       auto internal_output_index = out->m_index.get();
+      // the index comes from the server: a garbage one would resize the prefix by billions of outputs
+      if (internal_output_index > 100000) throw std::runtime_error("output index is out of the range of a transaction: " + std::to_string(internal_output_index));
       std::string tx_hash = out->m_tx_hash.get();
       uint64_t unlock_time = get_tx(tx_hash)->m_unlock_time.get();
 
@@ -1128,7 +1132,13 @@ namespace monero {
   }
 
   uint64_t monero_wallet_light_cache::get_num_blocks_to_unlock(const std::string& tx_hash) const {
-    const auto& tx = get_tx(tx_hash);
+    // the address txs and the unspent outs arrive in two requests, so an output can name a tx that the
+    // txs response does not have: the output is treated as unlocked, which the next sync corrects, and
+    // not as an error that leaves the balance of a partial sync
+    boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
+    auto it = m_txs.find(tx_hash);
+    if (it == m_txs.end()) return 0;
+    const auto& tx = it->second;
     uint64_t current_height = get_scanned_block_height() + 1;
     uint64_t tx_height = tx->m_mempool.get() ? current_height : tx->m_height.get();
     uint64_t unlock_time = tx->m_unlock_time.get();

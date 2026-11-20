@@ -160,6 +160,14 @@ namespace monero {
     void start_syncing(uint64_t sync_period_in_ms) override;
     void stop_syncing() override;
     void scan_txs(const std::vector<std::string>& tx_ids) override;
+    /**
+     * Get the number of candidate spends the last sync could not verify, which is greater than
+     * zero only for view-only wallets without imported key images; when non-zero, total sent
+     * and balances are the server's unrefined conservative values.
+     *
+     * @return the number of unrefined spends from the last sync
+     */
+    uint64_t get_unrefined_spend_count() const;
     uint64_t get_balance() const override;
     uint64_t get_balance(uint32_t account_idx) const override;
     uint64_t get_balance(uint32_t account_idx, uint32_t subaddress_idx) const override;
@@ -207,6 +215,7 @@ namespace monero {
     friend struct wallet_light_listener;
     std::unique_ptr<wallet_light_listener> m_wallet_listener; // internal wallet implementation listener
     std::set<monero_wallet_listener*> m_listeners;            // external wallet listeners
+    mutable boost::recursive_mutex m_listeners_mutex;         // guards m_listeners, which the sync and pool threads notify while the app thread changes it
 
     static monero_wallet_light* create_wallet_from_seed(monero_wallet_config& config, const std::shared_ptr<monero_rpc_connection>& rpc);
     static monero_wallet_light* create_wallet_from_keys(monero_wallet_config& config, const std::shared_ptr<monero_rpc_connection>& rpc);
@@ -237,7 +246,15 @@ namespace monero {
     boost::mutex m_syncing_mutex;                    // synchronize auto sync loop
     void run_sync_loop();                            // run the sync loop in a thread
     monero_sync_result lock_and_sync(boost::optional<uint64_t> start_height = boost::none);  // internal function to synchronize request to sync and rescan
+    /**
+     * Light wallets sync from a light wallet server (monero-lws), never from a daemon, so
+     * setting a daemon connection is unsupported.
+     */
+    void set_daemon_connection(const std::string& uri, const std::string& username = "", const std::string& password = "", const std::string& proxy_uri = "", const boost::optional<bool>& is_trusted = boost::none) override;
+    void set_daemon_connection(const std::shared_ptr<monero_rpc_connection>& connection, const boost::optional<bool>& is_trusted = boost::none) override;
+
     monero_sync_result sync_aux(boost::optional<uint64_t> start_height = boost::none);       // internal function to immediately block, sync, and report progress
+    std::atomic<uint64_t> m_unrefined_spend_count{0};  // candidate spends the last sync could not verify (view-only without cached key images)
 
     // wallet data
     mutable boost::recursive_mutex m_sync_data_mutex;
@@ -245,6 +262,7 @@ namespace monero {
 
     bool is_output_spent(const std::shared_ptr<monero_output_light> &output, const std::unordered_set<std::string>& pool_key_images) const;
     bool is_spend_real(const std::shared_ptr<monero_spend>& spend) const;
+    bool is_spend_verifiable(const std::shared_ptr<monero_spend>& spend) const;  // whether the wallet can verify a candidate spend is real (spend key present or key image cached)
     void process_txs(monero_get_address_txs_response& address_txs);
     uint64_t process_outputs(std::vector<std::shared_ptr<monero_output_light>>& outputs, uint64_t total_amount);
     void process_subaddresses();
