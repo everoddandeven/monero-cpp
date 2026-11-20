@@ -792,7 +792,7 @@ bool monero_utils::parse_payment_id_short(const std::string& payment_id_str, cry
   return true;
 }
 
-std::shared_ptr<monero_key_image> monero_utils::generate_key_image(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr, const cryptonote::account_base& account) {
+std::shared_ptr<monero_key_image> monero_utils::generate_key_image(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr, const cryptonote::account_base& account, const boost::optional<crypto::public_key>& expected_output_pubkey) {
   //   - R: ephem_pubkey
   //   - a: ack.m_view_secret_key [private viewkey]
   //   - b: ack.m_spend_secret_key [private spendkey]
@@ -824,14 +824,19 @@ std::shared_ptr<monero_key_image> monero_utils::generate_key_image(const crypto:
   crypto::public_key onetime_pubkey;
   CHECK_AND_ASSERT_THROW_MES(hwdev.secret_key_to_public_key(onetime_privkey, onetime_pubkey), "Failed to make public key");
 
+  // the wallet derived the one-time key from the transaction key and its own, so a server that names
+  // another one-time key for the output says the wallet owns money that it does not
+  if (expected_output_pubkey != boost::none && onetime_pubkey != *expected_output_pubkey) throw std::runtime_error("The one-time key of the output does not match the one the wallet derived");
+
   // 6. Key image I = x Hp(K)
   crypto::key_image ki;
   hwdev.generate_key_image(onetime_pubkey, onetime_privkey, ki);
 
-  // sign the key image with the output secret key
+  // sign the key image with the output secret key over the one-time key it spends: the verifier checks
+  // the signature against that key, and one over the transaction key would never verify
   crypto::signature signature;
   std::vector<const crypto::public_key*> key_ptrs;
-  key_ptrs.push_back(&ephem_pubkey);
+  key_ptrs.push_back(&onetime_pubkey);
 
   crypto::generate_ring_signature((const crypto::hash&)ki, ki, key_ptrs, onetime_privkey, 0, &signature);
 

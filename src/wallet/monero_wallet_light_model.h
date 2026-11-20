@@ -317,6 +317,7 @@ namespace monero {
 
   struct monero_submit_raw_tx_response {
     boost::optional<std::string> m_status;
+    boost::optional<bool> m_not_relayed;
 
     static void from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_submit_raw_tx_response>& response);
   };
@@ -399,7 +400,8 @@ namespace monero {
     void reindex_outputs(uint64_t amount);
     uint64_t get_per_byte_fee() const { return m_per_byte_fee; }
     uint64_t get_base_fee(uint32_t priority) const;
-    uint64_t get_fee_mask() const { return m_fee_mask; }
+    // a zero mask would divide by nothing in the fee computation, so it reads as one at the least
+    uint64_t get_fee_mask() const { return m_fee_mask == 0 ? 1 : m_fee_mask; }
     uint64_t get_amount() const { return m_amount; }
 
     // subaddresses
@@ -408,17 +410,26 @@ namespace monero {
     uint64_t get_num_blocks_to_unlock(uint32_t account_idx, uint32_t subaddress_idx) const;
     void init_subaddress(monero_subaddress& subaddress) const;
 
+    /**
+     * Get the tx of a hash that the account received or sent, which throws when the store does not have it.
+     *
+     * @param hash is the hash of the tx
+     * @return the tx of the hash
+     */
+    std::shared_ptr<monero_tx_light> get_tx(const std::string& hash) const;
+
   private:
     mutable boost::recursive_mutex m_mutex;
     std::shared_ptr<monero_key_image_cache> m_key_image_cache;
+
+    // the frozen key images, which a sync replaces the outputs they mark, so the setting outlives them
+    std::set<std::string> m_frozen_key_images;
 
     // transactions
     serializable_unordered_map<std::string, std::shared_ptr<monero_tx_light>> m_txs;
     std::vector<std::shared_ptr<monero_tx_light>> m_tx_list;
     serializable_unordered_map<std::string, std::shared_ptr<monero_tx_wallet>> m_self_constructed_txs;
     serializable_unordered_map<std::string, bool> m_spent_key_images;
-
-    std::shared_ptr<monero_tx_light> get_tx(const std::string& hash) const;
     void set_txs(monero_get_address_txs_response& response, const monero_get_address_info_response& addr_info_response);
 
     // blockchain

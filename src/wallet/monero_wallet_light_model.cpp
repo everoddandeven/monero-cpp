@@ -113,6 +113,8 @@ namespace monero {
   }
 
   void monero_output_light::from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_output_light>& output) {
+    // recipient is a monero-lws-specific field which spec-conformant servers omit; default to the primary address
+    output->m_recipient = std::make_shared<monero_address_meta>();
     for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
       std::string key = it->first;
       if (key == std::string("tx_id")) output->m_tx_id = it->second.get_value<uint64_t>();
@@ -213,7 +215,10 @@ namespace monero {
     if (size() != 2) return indices;
     uint32_t min_i = at(0);
     uint32_t maj_i = at(1);
-    for(uint32_t i = min_i; i <= maj_i; i++) indices.push_back(i);
+    // a range of the whole space of an index would fill the memory with indices, and the last index of
+    // the space wraps when it counts up: the count runs where it cannot wrap
+    if (min_i > maj_i || maj_i - min_i > 16384) throw std::runtime_error("subaddress range is out of the range of an account: [" + std::to_string(min_i) + ", " + std::to_string(maj_i) + "]");
+    for(uint64_t i = min_i; i <= (uint64_t) maj_i; i++) indices.push_back((uint32_t) i);
     return indices;
   }
 
@@ -596,6 +601,7 @@ namespace monero {
     for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
       std::string key = it->first;
       if (key == std::string("status")) response->m_status = it->second.data();
+      else if (key == std::string("not_relayed")) response->m_not_relayed = it->second.get_value<bool>();
     }
   }
 
@@ -706,7 +712,7 @@ namespace monero {
       }
 
       for (const auto& output : kv.second) {
-        if (output->m_frozen.value_or(false) || get_num_blocks_to_unlock(output->m_tx_hash.get()) > 0) continue;
+        if (output->m_frozen.value_or(false) || (output->m_key_image != boost::none && m_frozen_key_images.count(output->m_key_image.get()) > 0) || get_num_blocks_to_unlock(output->m_tx_hash.get()) > 0) continue;
         if (output->is_key_image_known() && pool_key_images.count(output->m_key_image.get())) continue;
         spendable.push_back(output);
       }
@@ -735,9 +741,13 @@ namespace monero {
 
   void monero_wallet_light_cache::set_outputs(monero_get_unspent_outs_response& response) {
     boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
+    // a server that omits the mask or answers zero would make the fee computation divide by it: the
+    // value is clamped to a sane bound and read as one at the least, which the fees of a real chain
+    // never notice but a hostile or broken answer cannot turn into a crash
+    static const uint64_t MAX_SANE_FEE_MASK = 1000000; // 100x today's real value
     m_per_byte_fee = response.m_per_byte_fee.value_or(0);
     m_fees = std::move(response.m_fees);
-    m_fee_mask = response.m_fee_mask.value_or(0);
+    m_fee_mask = std::min(response.m_fee_mask.value_or(0), MAX_SANE_FEE_MASK);
     m_amount = response.m_amount.value_or(0);
     m_outputs = std::move(response.m_outputs);
     std::sort(m_outputs.begin(), m_outputs.end(), [](const std::shared_ptr<monero_output_light>& a, const std::shared_ptr<monero_output_light>& b) {
@@ -875,9 +885,11 @@ namespace monero {
       uint64_t change_amount = 0;
       if (tx->m_change_amount != boost::none) change_amount = tx->m_change_amount.get();
 
+      // the change of a pending tx goes to the account that sent it, and not always to the primary one
+      uint32_t change_account_idx = tx->m_outgoing_transfer != nullptr && tx->m_outgoing_transfer->m_account_index != boost::none ? tx->m_outgoing_transfer->m_account_index.get() : 0;
       m_balance += change_amount;
-      m_account_balance[0] += change_amount;
-      m_subaddress_balance[0][0] += change_amount;
+      m_account_balance[change_account_idx] += change_amount;
+      m_subaddress_balance[change_account_idx][0] += change_amount;
 
       for (const std::shared_ptr<monero_output> &out : tx->m_outputs) {
         std::shared_ptr<monero_output_wallet> output = std::dynamic_pointer_cast<monero_output_wallet>(out);
@@ -932,13 +944,16 @@ namespace monero {
     auto it = m_key_image_index.find(key_image);
     if (it == m_key_image_index.end()) throw std::runtime_error("Key image not found");
     m_outputs[it->second]->m_frozen = frozen;
+    // the sync replaces the outputs, so the setting lives in the set of key images and not only on the object
+    if (frozen) m_frozen_key_images.insert(key_image);
+    else m_frozen_key_images.erase(key_image);
   }
 
   bool monero_wallet_light_cache::is_key_image_frozen(const std::string& key_image) const {
     validate_key_image(key_image);
     auto it = m_key_image_index.find(key_image);
     if (it == m_key_image_index.end()) throw std::runtime_error("Key image not found");
-    return m_outputs[it->second]->m_frozen.value_or(false);
+    return m_outputs[it->second]->m_frozen.value_or(false) || m_frozen_key_images.count(key_image) > 0;
   }
 
   std::shared_ptr<monero_output_light> monero_wallet_light_cache::get_output(const std::string& key_image) const {
@@ -979,8 +994,17 @@ namespace monero {
       const auto &out = unspent_outs[n];
       uint64_t out_amount = out->m_amount.get();
       auto internal_output_index = out->m_index.get();
+      // the index comes from the server: a garbage one would resize the prefix by billions of outputs
+      if (internal_output_index > 100000) throw std::runtime_error("output index is out of the range of a transaction: " + std::to_string(internal_output_index));
       std::string tx_hash = out->m_tx_hash.get();
-      uint64_t unlock_time = get_tx(tx_hash)->m_unlock_time.get();
+      // the tx can be missing in the window of the two requests of a sync, like the unlock path: the
+      // prefix of the export carries no lock then, which the next export after the next sync corrects
+      uint64_t unlock_time;
+      {
+        boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
+        auto tx_it = m_txs.find(tx_hash);
+        unlock_time = tx_it == m_txs.end() ? 0 : tx_it->second->m_unlock_time.get();
+      }
 
       crypto::public_key public_key;
       crypto::public_key tx_pub_key;
@@ -1128,7 +1152,13 @@ namespace monero {
   }
 
   uint64_t monero_wallet_light_cache::get_num_blocks_to_unlock(const std::string& tx_hash) const {
-    const auto& tx = get_tx(tx_hash);
+    // the address txs and the unspent outs arrive in two requests, so an output can name a tx that the
+    // txs response does not have: the output is treated as unlocked, which the next sync corrects, and
+    // not as an error that leaves the balance of a partial sync
+    boost::lock_guard<boost::recursive_mutex> lock(m_mutex);
+    auto it = m_txs.find(tx_hash);
+    if (it == m_txs.end()) return 0;
+    const auto& tx = it->second;
     uint64_t current_height = get_scanned_block_height() + 1;
     uint64_t tx_height = tx->m_mempool.get() ? current_height : tx->m_height.get();
     uint64_t unlock_time = tx->m_unlock_time.get();
@@ -1273,7 +1303,7 @@ namespace monero {
     if (out->is_key_image_known()) {
       output->m_key_image = std::make_shared<monero_key_image>();
       output->m_key_image.get()->m_hex = out->m_key_image;
-      output->m_is_frozen = out->m_frozen.value_or(false);
+      output->m_is_frozen = out->m_frozen.value_or(false) || (out->m_key_image != boost::none && m_frozen_key_images.count(out->m_key_image.get()) > 0);
       if (!*output->m_is_spent) output->m_is_spent = is_key_image_spent(out->m_key_image.get(), pool_key_images);
     }
 

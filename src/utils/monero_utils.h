@@ -240,7 +240,7 @@ namespace monero_utils
    * @param account recipient's account
    * @return the generated key image
    */
-  std::shared_ptr<monero_key_image> generate_key_image(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr, const cryptonote::account_base& account);
+  std::shared_ptr<monero_key_image> generate_key_image(const crypto::public_key &ephem_pubkey, const size_t tx_output_index, const cryptonote::subaddress_index &received_subaddr, const cryptonote::account_base& account, const boost::optional<crypto::public_key>& expected_output_pubkey = boost::none);
 
   // ----------------------------- GATHER BLOCKS ------------------------------
 
