@@ -2806,6 +2806,15 @@ namespace monero {
           output_txs.insert(tx);
         }
       }
+
+      // a tx that no transfer backs is known only by its outputs, which the window between
+      // the two server calls leaves: it is part of the answer too, not dropped from it
+      for (const auto& entry : tx_map) {
+        if (txsSet.find(entry.second) == txsSet.end()) {
+          txs.push_back(entry.second);
+          txsSet.insert(entry.second);
+        }
+      }
     }
 
     // restore transfer and output queries
