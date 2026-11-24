@@ -2983,17 +2983,25 @@ namespace monero {
     }
 
     sync_op_lock op_lock(*this); // do not refresh while relaying txs
-    try {
-      std::vector<std::string> tx_hashes;
-      for (auto &ptx: ptx_vector) {
+    std::vector<std::string> tx_hashes;
+    for (auto &ptx: ptx_vector) {
+      try {
         m_w2->commit_tx(ptx);
-        tx_hashes.push_back(epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx)));
+      } catch (const std::exception &e) {
+        // a tx that fails to submit after an earlier one went leaves money on the network that
+        // no returned list names: the txs that went out are heard by the listeners, then the
+        // failure names them so a caller that rebuilds knows what already pays
+        if (!tx_hashes.empty()) m_w2_listener->on_spend_tx_hashes(tx_hashes);
+        std::string prefix = "Failed to submit signed tx: ";
+        if (tx_hashes.empty()) throw std::runtime_error(prefix + e.what());
+        std::string relayed_list;
+        for (const auto& h : tx_hashes) relayed_list += (relayed_list.empty() ? "" : ", ") + h;
+        throw std::runtime_error(prefix + e.what() + "; already relayed: " + relayed_list);
       }
-      m_w2_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of spent funds
-      return tx_hashes;
-    } catch (const std::exception &e) {
-      throw std::runtime_error(std::string("Failed to submit signed tx: ") + e.what());
+      tx_hashes.push_back(epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx)));
     }
+    m_w2_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of spent funds
+    return tx_hashes;
   }
 
   std::string monero_wallet_full::sign_message(const std::string& msg, monero_message_signature_type signature_type, uint32_t account_idx, uint32_t subaddress_idx) const {

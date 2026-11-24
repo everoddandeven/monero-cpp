@@ -2328,6 +2328,7 @@ namespace monero {
 
     std::vector<tools::wallet2::tx_construction_data> unsigned_construction_data;
     bool any_relayed = false;
+    std::vector<std::string> relayed_hashes; // the hashes of the chunks that went out, which a failure after them names
 
     // one iteration per chunk of up to max_destinations_per_tx destinations
     for (size_t chunk_start = 0; chunk_start < dests.size(); chunk_start += max_destinations_per_tx) {
@@ -2344,7 +2345,21 @@ namespace monero {
       if (unspent_outs.empty()) throw std::runtime_error("not enough unlocked money");
 
       cryptonote::blobdata tx_blob;
-      tools::wallet2::pending_tx ptx = tx_builder.build(subaddr_account_idx, chunk_dests, config.m_payment_id, chunk_amounts, false, simple_priority, unspent_outs, fee_per_b, fee_mask, tx_blob, chunk_subtract_fee_from);
+      tools::wallet2::pending_tx ptx;
+      try {
+        ptx = tx_builder.build(subaddr_account_idx, chunk_dests, config.m_payment_id, chunk_amounts, false, simple_priority, unspent_outs, fee_per_b, fee_mask, tx_blob, chunk_subtract_fee_from);
+      } catch (const std::exception& e) {
+        // a chunk that cannot build after an earlier one relayed leaves money on the network that
+        // no returned list names: the chunks that went out are heard by the balance and the
+        // listeners, then the failure names them so a caller that rebuilds knows what already pays
+        if (relayed_hashes.empty()) throw;
+        m_cache->calculate_balance();
+        op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself
+        m_wallet_listener->on_spend_txs(result);
+        std::string relayed_list;
+        for (const auto& h : relayed_hashes) relayed_list += (relayed_list.empty() ? "" : ", ") + h;
+        throw std::runtime_error(std::string(e.what()) + "; already relayed: " + relayed_list);
+      }
       std::string full_hex = epee::string_tools::buff_to_hex_nodelimer(tx_blob);
 
       if (ptx.tx_key != crypto::null_skey) {
@@ -2407,7 +2422,10 @@ namespace monero {
       MINFO("monero_wallet_light::create_txs(): created unconfirmed tx with " << tx->m_outputs.size() << " outputs and " << tx->m_inputs.size() << " inputs");
 
       if (!is_view_only() && relayed) m_cache->add_unconfirmed_tx(tx, change_pubkey);
-      if (relayed) any_relayed = true;
+      if (relayed) {
+        any_relayed = true;
+        relayed_hashes.push_back(epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx)));
+      }
     }
 
     if (is_view_only()) {
