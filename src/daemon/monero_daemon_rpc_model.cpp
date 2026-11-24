@@ -1000,7 +1000,7 @@ namespace monero {
 
         block->m_miner_tx = tx;
       }
-      else if (key == std::string("json")) {
+      else if (key == std::string("json") && !is_nested) {
         auto json = it->second.data();
         boost::property_tree::ptree json_node;
         gen_utils::deserialize(json, json_node);
