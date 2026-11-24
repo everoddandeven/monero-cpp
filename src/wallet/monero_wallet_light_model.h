@@ -199,11 +199,11 @@ namespace monero {
     rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const override;
   };
 
-  struct monero_get_random_outs_params : public serializable_struct {
+  struct monero_get_random_outs_params : public monero_wallet_params {
     boost::optional<uint32_t> m_count;
     std::vector<uint64_t> m_amounts;
 
-    monero_get_random_outs_params(uint32_t count, const std::vector<uint64_t>& amounts): m_count(count), m_amounts(amounts) {}
+    monero_get_random_outs_params(const std::string& address, const std::string& view_key, uint32_t count, const std::vector<uint64_t>& amounts): monero_wallet_params(address, view_key), m_count(count), m_amounts(amounts) {}
 
     rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const override;
   };
@@ -236,10 +236,10 @@ namespace monero {
     rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const override;
   };
 
-  struct monero_submit_raw_tx_params : public serializable_struct {
+  struct monero_submit_raw_tx_params : public monero_wallet_params {
     boost::optional<std::string> m_tx;
 
-    monero_submit_raw_tx_params(const std::string& tx): m_tx(tx) {}
+    monero_submit_raw_tx_params(const std::string& address, const std::string& view_key, const std::string& tx): monero_wallet_params(address, view_key), m_tx(tx) {}
 
     rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const override;
   };

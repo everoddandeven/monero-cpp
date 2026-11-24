@@ -129,7 +129,7 @@ namespace monero {
     }
 
     std::shared_ptr<monero_get_random_outs_response> get_random_outs(const std::vector<uint64_t>& amounts, uint32_t count) const {
-      auto params = std::make_shared<monero_get_random_outs_params>(count, amounts);
+      auto params = std::make_shared<monero_get_random_outs_params>(m_primary_address, m_prv_view_key, count, amounts);
       auto result = m_rpc->send_path_request("get_random_outs", params);
       auto response = std::make_shared<monero_get_random_outs_response>();
       monero_get_random_outs_response::from_property_tree(result, response);
@@ -161,7 +161,7 @@ namespace monero {
     }
 
     std::shared_ptr<monero_submit_raw_tx_response> submit_raw_tx(const std::string& tx) const {
-      auto params = std::make_shared<monero_submit_raw_tx_params>(tx);
+      auto params = std::make_shared<monero_submit_raw_tx_params>(m_primary_address, m_prv_view_key, tx);
       auto result = m_rpc->send_path_request("submit_raw_tx", params);
       auto response = std::make_shared<monero_submit_raw_tx_response>();
       monero_submit_raw_tx_response::from_property_tree(result, response);

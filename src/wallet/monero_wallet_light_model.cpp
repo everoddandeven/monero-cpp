@@ -397,7 +397,7 @@ namespace monero {
   rapidjson::Value monero_get_random_outs_params::to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const {
 
     // create root
-    rapidjson::Value root(rapidjson::kObjectType);
+    rapidjson::Value root = monero_wallet_params::to_rapidjson_val(allocator);
 
     // set num values
     rapidjson::Value value_num(rapidjson::kNumberType);
@@ -472,7 +472,7 @@ namespace monero {
   rapidjson::Value monero_submit_raw_tx_params::to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const {
 
     // create root
-    rapidjson::Value root(rapidjson::kObjectType);
+    rapidjson::Value root = monero_wallet_params::to_rapidjson_val(allocator);
 
     // set string values
     rapidjson::Value value_str(rapidjson::kStringType);
