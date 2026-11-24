@@ -333,6 +333,9 @@ namespace monero {
 
   struct monero_output_wallet_light : public monero_output_wallet {
     boost::optional<bool> m_is_change;
+
+    std::shared_ptr<monero_output_wallet> make_copy() const override;
+    std::shared_ptr<monero_output_wallet> copy(const std::shared_ptr<monero_output_wallet>& src, const std::shared_ptr<monero_output_wallet>& tgt) const override;
   };
 
   class monero_wallet_light_cache {

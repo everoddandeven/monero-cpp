@@ -256,8 +256,9 @@ namespace monero {
     rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const;
     static void from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_output_wallet>& output_wallet);
     static std::shared_ptr<monero_output_wallet> deserialize(const std::string& json);
+    virtual std::shared_ptr<monero_output_wallet> make_copy() const;
     std::shared_ptr<monero_output_wallet> copy(const std::shared_ptr<monero_output>& src, const std::shared_ptr<monero_output>& tgt) const;
-    std::shared_ptr<monero_output_wallet> copy(const std::shared_ptr<monero_output_wallet>& src, const std::shared_ptr<monero_output_wallet>& tgt) const;
+    virtual std::shared_ptr<monero_output_wallet> copy(const std::shared_ptr<monero_output_wallet>& src, const std::shared_ptr<monero_output_wallet>& tgt) const;
     void merge(const std::shared_ptr<monero_output>& self, const std::shared_ptr<monero_output>& other);
     void merge(const std::shared_ptr<monero_output_wallet>& self, const std::shared_ptr<monero_output_wallet>& other);
   };
@@ -281,7 +282,7 @@ namespace monero {
     static std::shared_ptr<monero_output_query> deserialize_from_block(const std::string& output_query_json);
     static bool is_contextual(const monero_output_query& query);
     std::shared_ptr<monero_output_query> copy(const std::shared_ptr<monero_output>& src, const std::shared_ptr<monero_output>& tgt) const;
-    std::shared_ptr<monero_output_query> copy(const std::shared_ptr<monero_output_wallet>& src, const std::shared_ptr<monero_output_wallet>& tgt) const; // TODO: necessary to override all super classes?
+    std::shared_ptr<monero_output_wallet> copy(const std::shared_ptr<monero_output_wallet>& src, const std::shared_ptr<monero_output_wallet>& tgt) const override;
     std::shared_ptr<monero_output_query> copy(const std::shared_ptr<monero_output_query>& src, const std::shared_ptr<monero_output_query>& tgt) const;
     bool meets_criteria(monero_output_wallet* output, bool query_parent = true) const;
   };

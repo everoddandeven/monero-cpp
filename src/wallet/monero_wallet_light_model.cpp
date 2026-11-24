@@ -112,6 +112,18 @@ namespace monero {
     return false;
   }
 
+  std::shared_ptr<monero_output_wallet> monero_output_wallet_light::make_copy() const {
+    return std::make_shared<monero_output_wallet_light>();
+  }
+
+  std::shared_ptr<monero_output_wallet> monero_output_wallet_light::copy(const std::shared_ptr<monero_output_wallet>& src, const std::shared_ptr<monero_output_wallet>& tgt) const {
+    monero_output_wallet::copy(src, tgt);
+    // the change mark of a light output names the change of the wallet's own construction,
+    // which a copy of the output keeps
+    std::static_pointer_cast<monero_output_wallet_light>(tgt)->m_is_change = std::static_pointer_cast<monero_output_wallet_light>(src)->m_is_change;
+    return tgt;
+  }
+
   void monero_output_light::from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_output_light>& output) {
     // recipient is a monero-lws-specific field which spec-conformant servers omit; default to the primary address
     output->m_recipient = std::make_shared<monero_address_meta>();

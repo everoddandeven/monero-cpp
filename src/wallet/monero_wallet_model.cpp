@@ -406,14 +406,14 @@ namespace monero {
     for (size_t i = 0; i < src->m_inputs.size(); ++i) {
       std::shared_ptr<monero_output_wallet> input_wallet = std::dynamic_pointer_cast<monero_output_wallet>(src->m_inputs[i]);
       if (input_wallet == nullptr) continue;
-      std::shared_ptr<monero_output_wallet> input_wallet_copy = input_wallet->copy(input_wallet, std::make_shared<monero_output_wallet>());
+      std::shared_ptr<monero_output_wallet> input_wallet_copy = input_wallet->copy(input_wallet, input_wallet->make_copy());
       input_wallet_copy->m_tx = tgt;
       tgt->m_inputs[i] = input_wallet_copy;
     }
     for (size_t i = 0; i < src->m_outputs.size(); ++i) {
       std::shared_ptr<monero_output_wallet> output_wallet = std::dynamic_pointer_cast<monero_output_wallet>(src->m_outputs[i]);
       if (output_wallet == nullptr) continue;
-      std::shared_ptr<monero_output_wallet> output_wallet_copy = output_wallet->copy(output_wallet, std::make_shared<monero_output_wallet>());
+      std::shared_ptr<monero_output_wallet> output_wallet_copy = output_wallet->copy(output_wallet, output_wallet->make_copy());
       output_wallet_copy->m_tx = tgt;
       tgt->m_outputs[i] = output_wallet_copy;
     }
@@ -1308,6 +1308,10 @@ namespace monero {
     return gen_utils::deserialize<monero_output_wallet>(json);
   }
 
+  std::shared_ptr<monero_output_wallet> monero_output_wallet::make_copy() const {
+    return std::make_shared<monero_output_wallet>();
+  }
+
   std::shared_ptr<monero_output_wallet> monero_output_wallet::copy(const std::shared_ptr<monero_output>& src, const std::shared_ptr<monero_output>& tgt) const {
     MTRACE("monero_output_wallet::copy(output)");
     return monero_output_wallet::copy(std::static_pointer_cast<monero_output_wallet>(src), std::static_pointer_cast<monero_output_wallet>(tgt));
@@ -1414,7 +1418,7 @@ namespace monero {
     return monero_output_query::copy(std::static_pointer_cast<monero_output_query>(src), std::static_pointer_cast<monero_output_query>(tgt));
   };
 
-  std::shared_ptr<monero_output_query> monero_output_query::copy(const std::shared_ptr<monero_output_wallet>& src, const std::shared_ptr<monero_output_wallet>& tgt) const {
+  std::shared_ptr<monero_output_wallet> monero_output_query::copy(const std::shared_ptr<monero_output_wallet>& src, const std::shared_ptr<monero_output_wallet>& tgt) const {
     return monero_output_query::copy(std::static_pointer_cast<monero_output_query>(src), std::static_pointer_cast<monero_output_query>(tgt));
   };
 
