@@ -2900,6 +2900,7 @@ namespace monero {
           tx->m_change_address = get_account_address_as_str(m_w2->nettype(), cd0.subaddr_account > 0, cd0.change_dts.addr);
         }
 
+        if (tx->m_output_sum.get() > tx->m_input_sum.get()) throw std::runtime_error("Unbalanced tx set: the outputs pay more than the inputs");
         tx->m_fee = tx->m_input_sum.get() - tx->m_output_sum.get();
         if (tx_weights[n] > 0) tx->m_weight = tx_weights[n];
         tx->m_unlock_time = cd.unlock_time;

@@ -1912,6 +1912,7 @@ namespace monero {
           tx->m_change_address = get_account_address_as_str(static_cast<cryptonote::network_type>(m_network_type), cd0.subaddr_account > 0, cd0.change_dts.addr);
         }
 
+        if (tx->m_output_sum.get() > tx->m_input_sum.get()) throw std::runtime_error("Unbalanced tx set: the outputs pay more than the inputs");
         tx->m_fee = tx->m_input_sum.get() - tx->m_output_sum.get();
         tx->m_unlock_time = cd.unlock_time;
         tx->m_extra_hex = epee::to_hex::string({cd.extra.data(), cd.extra.size()});
@@ -3495,22 +3496,24 @@ namespace monero {
     bool checked_unconfirmed = false;
 
     if (!spent && !output->is_key_image_known()) {
-      try {
-        // the expected one-time key is the one the server names for the output, which the derivation
-        // checks itself against before it signs
-        crypto::public_key expected_pub_key;
-        if (!epee::string_tools::hex_to_pod(output->m_public_key.get(), expected_pub_key)) throw std::runtime_error("Failed to parse output public key");
-        crypto::public_key tx_pub_key_pod;
-        if (!epee::string_tools::hex_to_pod(tx_pub_key, tx_pub_key_pod)) throw std::runtime_error("Failed to parse output tx public key");
-        output->m_key_image = monero_utils::generate_key_image(tx_pub_key_pod, output_idx, cryptonote::subaddress_index{account_idx, subaddress_idx}, m_account, boost::optional<crypto::public_key>(expected_pub_key))->m_hex;
-        // check key image is spent in unconfirmed transactions
-        spent = m_cache->is_key_image_spent(output->m_key_image.get(), pool_key_images);
-        checked_unconfirmed = true;
-      }
-      catch (...) {
-        if (is_view_only()) m_key_image_cache->set(nullptr, tx_pub_key, output_idx, account_idx, subaddress_idx, true);
+      if (is_view_only()) {
+        // a wallet that only reads cannot make the key image itself, which the server's spent
+        // outputs answer instead: the null key image marks the output as one whose spending
+        // it cannot know until the server says it
+        m_key_image_cache->set(nullptr, tx_pub_key, output_idx, account_idx, subaddress_idx, true);
         return false;
       }
+      // the expected one-time key is the one the server names for the output, which the derivation
+      // checks itself against before it signs: a field that does not read names a broken or
+      // hostile answer, which errors here instead of counting the output as spendable money
+      crypto::public_key expected_pub_key;
+      if (!epee::string_tools::hex_to_pod(output->m_public_key.get(), expected_pub_key)) throw std::runtime_error("Failed to parse output public key");
+      crypto::public_key tx_pub_key_pod;
+      if (!epee::string_tools::hex_to_pod(tx_pub_key, tx_pub_key_pod)) throw std::runtime_error("Failed to parse output tx public key");
+      output->m_key_image = monero_utils::generate_key_image(tx_pub_key_pod, output_idx, cryptonote::subaddress_index{account_idx, subaddress_idx}, m_account, boost::optional<crypto::public_key>(expected_pub_key))->m_hex;
+      // check key image is spent in unconfirmed transactions
+      spent = m_cache->is_key_image_spent(output->m_key_image.get(), pool_key_images);
+      checked_unconfirmed = true;
     }
 
     if (!checked_unconfirmed && !spent && output->is_key_image_known()) {
