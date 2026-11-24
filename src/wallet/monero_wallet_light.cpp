@@ -912,6 +912,7 @@ namespace monero {
     }
 
     void on_sync_start(uint64_t start_height) {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       tools::threadpool::waiter waiter(*m_notification_pool);
       m_notification_pool->submit(&waiter, [this, start_height]() {
         if (m_sync_start_height != boost::none || m_sync_end_height != boost::none) throw std::runtime_error("Sync start or end height should not already be allocated, is previous sync in progress?");
@@ -922,6 +923,7 @@ namespace monero {
     }
 
     void on_sync_end() {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       tools::threadpool::waiter waiter(*m_notification_pool);
       m_notification_pool->submit(&waiter, [this]() {
         check_for_changed_balances();
@@ -934,6 +936,7 @@ namespace monero {
     }
 
     void on_new_block(uint64_t height) {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
 
       // ignore notifications before sync start height, irrelevant to clients
@@ -969,6 +972,7 @@ namespace monero {
     }
 
     void on_spend_txs(const std::vector<std::shared_ptr<monero_tx_wallet>>& txs) {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
       tools::threadpool::waiter waiter(*m_notification_pool);
       m_notification_pool->submit(&waiter, [this, txs]() {
@@ -995,6 +999,7 @@ namespace monero {
     std::set<std::string> m_prev_known_tx_hashes;            // txs seen as of the last diff, to detect newly-appeared ones
     std::set<std::string> m_prev_locked_tx_hashes;           // locked txs seen as of the last diff, to detect newly-unlocked ones
     std::unique_ptr<tools::threadpool> m_notification_pool;  // threadpool of size 1 to queue notifications for external announcement
+    boost::recursive_mutex m_notification_mutex;             // the sync thread and the threads that spend announce at the same time, and the pool runs no worker of its own
 
     bool check_for_changed_balances() {
       uint64_t balance = m_wallet.get_balance();

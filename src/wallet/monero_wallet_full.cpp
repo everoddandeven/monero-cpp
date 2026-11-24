@@ -607,6 +607,7 @@ namespace monero {
     }
 
     void on_sync_start(uint64_t start_height, uint64_t end_height) {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       tools::threadpool::waiter waiter(*m_notification_pool);
       m_notification_pool->submit(&waiter, [this, start_height, end_height]() {
         if (m_sync_start_height != boost::none || m_sync_end_height != boost::none) throw std::runtime_error("Sync start or end height should not already be allocated, is previous sync in progress?");
@@ -626,6 +627,7 @@ namespace monero {
     }
 
     void on_sync_end() {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       tools::threadpool::waiter waiter(*m_notification_pool);
       m_notification_pool->submit(&waiter, [this]() {
         auto reset_sync_state = epee::misc_utils::create_scope_leave_handler([this]() {
@@ -641,6 +643,7 @@ namespace monero {
     }
 
     void on_new_block(uint64_t height, const cryptonote::block& cn_block) override {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
 
       // ignore notifications outside an active sync
@@ -694,6 +697,7 @@ namespace monero {
     }
 
     void on_unconfirmed_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& cn_tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index) override {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
 
       // queue notification processing off main thread
@@ -734,6 +738,7 @@ namespace monero {
     }
 
     void on_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& cn_tx, uint64_t amount, uint64_t burnt, const cryptonote::subaddress_index& subaddr_index, bool is_change, uint64_t unlock_time) override {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
 
       // queue notification processing off main thread
@@ -776,6 +781,7 @@ namespace monero {
     }
 
     void on_money_spent(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& cn_tx_in, uint64_t amount, const cryptonote::transaction& cn_tx_out, const cryptonote::subaddress_index& subaddr_index) override {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
       if (&cn_tx_in != &cn_tx_out) throw std::runtime_error("on_money_spent() in tx is different than out tx");
 
@@ -818,6 +824,7 @@ namespace monero {
     }
 
     void on_spend_tx_hashes(const std::vector<std::string>& tx_hashes) {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
       monero_tx_query tx_query;
       tx_query.m_hashes = tx_hashes;
@@ -827,6 +834,7 @@ namespace monero {
     }
 
     void on_spend_txs(const std::vector<std::shared_ptr<monero_tx_wallet>>& txs) {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
       tools::threadpool::waiter waiter(*m_notification_pool);
       m_notification_pool->submit(&waiter, [this, txs]() {
@@ -847,6 +855,7 @@ namespace monero {
     uint64_t m_prev_unlocked_balance;
     std::set<std::string> m_prev_locked_tx_hashes;
     std::unique_ptr<tools::threadpool> m_notification_pool;  // threadpool of size 1 to queue notifications for external announcement
+    boost::recursive_mutex m_notification_mutex;             // the refresh thread and the threads that spend announce at the same time, and the pool runs no worker of its own
 
     bool check_for_changed_balances() {
       uint64_t balance = m_w2.balance_all(STRICT_); // unlocked; announcing thread holds the sync lock
