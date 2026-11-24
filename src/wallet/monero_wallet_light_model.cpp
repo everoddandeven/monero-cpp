@@ -536,6 +536,13 @@ namespace monero {
         for (boost::property_tree::ptree::const_iterator it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
           std::shared_ptr<monero_tx_light> transaction = std::make_shared<monero_tx_light>();
           monero_tx_light::from_property_tree(it2->second, transaction);
+          // the sync reads the state, the height and the totals of every transaction: one that
+          // misses a field errors here, and not as a crash of the sync deeper in
+          if (transaction->m_hash == boost::none || transaction->m_mempool == boost::none || transaction->m_coinbase == boost::none ||
+              transaction->m_height == boost::none || transaction->m_unlock_time == boost::none ||
+              transaction->m_total_received == boost::none || transaction->m_total_sent == boost::none) {
+            throw std::runtime_error("Light wallet server response is missing required transaction fields");
+          }
           response->m_transactions.push_back(transaction);
         }
       }
@@ -574,6 +581,12 @@ namespace monero {
         for (boost::property_tree::ptree::const_iterator it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
           std::shared_ptr<monero_output_light> out = std::make_shared<monero_output_light>();
           monero_output_light::from_property_tree(it2->second, out);
+          // the sync reads every field of an unspent output and holds it as spendable money: one
+          // that misses a field errors here, and not as a crash of the sync deeper in
+          if (out->m_amount == boost::none || out->m_public_key == boost::none || out->m_tx_pub_key == boost::none ||
+              out->m_index == boost::none || out->m_global_index == boost::none || out->m_tx_hash == boost::none) {
+            throw std::runtime_error("Light wallet server response is missing required output fields");
+          }
           response->m_outputs.push_back(out);
         }
       }
