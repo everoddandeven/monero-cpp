@@ -2003,8 +2003,10 @@ namespace monero {
     for (auto &ptx: signed_txs.ptx) {
       std::string pending_tx_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx));
       std::string failure;
+      std::string full_hex;
       try {
-        const auto res = m_client->submit_raw_tx(epee::string_tools::buff_to_hex_nodelimer(cryptonote::tx_to_blob(ptx.tx)));
+        full_hex = epee::string_tools::buff_to_hex_nodelimer(cryptonote::tx_to_blob(ptx.tx));
+        const auto res = m_client->submit_raw_tx(full_hex);
         if (res->m_status == boost::none || res->m_status.get() != std::string("OK")) failure = res->m_status ? *res->m_status : std::string("no status");
         else if (res->m_not_relayed.value_or(false)) failure = "not relayed";
       } catch (const std::exception &e) { failure = e.what(); }
@@ -2045,8 +2047,16 @@ namespace monero {
           }
         } else MWARNING("submit_txs(): signed tx " << pending_tx_hash << " construction data does not match its own input count; relaying it without updating cached key images for its inputs");
 
+        // the key of the transaction that the signer built is stored with its hash, which the check
+        // of a payment reads: a submitted tx is one the wallet paid, the same as one it relayed
+        if (ptx.tx_key != crypto::null_skey) {
+          const crypto::hash txid = get_transaction_hash(ptx.tx);
+          m_cache->m_tx_keys[txid] = ptx.tx_key;
+          m_cache->m_additional_tx_keys[txid] = ptx.additional_tx_keys;
+        }
         std::string change_pubkey;
         std::shared_ptr<monero_tx_wallet> tx = monero_wallet_utils::ptx_to_tx(ptx, static_cast<cryptonote::network_type>(m_network_type), this, &change_pubkey);
+        tx->m_full_hex = full_hex;
         m_cache->add_unconfirmed_tx(tx, change_pubkey);
 
         // a wallet that only reads submits what another wallet signed, which names the key images of the
