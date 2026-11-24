@@ -420,6 +420,9 @@ namespace monero {
 
     // copy wallet extensions
     tgt->m_tx_set = src->m_tx_set;
+    // the block names the height and the time of a confirmed tx, which a copy still answers: the
+    // copy shares the block of the tx it copies, the way its transfers and outputs share their values
+    tgt->m_block = src->m_block;
     tgt->m_is_incoming = src->m_is_incoming;
     tgt->m_is_outgoing = src->m_is_outgoing;
     if (!src->m_incoming_transfers.empty()) {
