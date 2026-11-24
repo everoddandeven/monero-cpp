@@ -1236,7 +1236,8 @@ namespace monero {
     return *set;
   }
 
-  monero_tx_set monero_wallet_rpc::sign_txs(const std::string& unsigned_tx_hex) {
+  monero_tx_set monero_wallet_rpc::sign_txs(const std::string& unsigned_tx_hex, const boost::optional<std::string>& expected_commitment) {
+    if (expected_commitment != boost::none) throw std::runtime_error("sign_txs() cannot verify a described set on an rpc wallet: describe and sign through one wallet");
     auto params = std::make_shared<monero_sign_describe_transfer_params>(unsigned_tx_hex);
     params->m_export_raw = true;
     params->m_get_tx_keys = true;

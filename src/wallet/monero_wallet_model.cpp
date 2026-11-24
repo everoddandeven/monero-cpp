@@ -853,6 +853,7 @@ namespace monero {
     if (m_multisig_tx_hex != boost::none) monero_utils::add_json_member("multisigTxHex", m_multisig_tx_hex.get(), allocator, root, value_str);
     if (m_unsigned_tx_hex != boost::none) monero_utils::add_json_member("unsignedTxHex", m_unsigned_tx_hex.get(), allocator, root, value_str);
     if (m_signed_tx_hex != boost::none) monero_utils::add_json_member("signedTxHex", m_signed_tx_hex.get(), allocator, root, value_str);
+    if (m_unsigned_commitment != boost::none) monero_utils::add_json_member("unsignedCommitment", m_unsigned_commitment.get(), allocator, root, value_str);
 
     // set sub-arrays
     if (!m_txs.empty()) root.AddMember("txs", monero_utils::to_rapidjson_val(allocator, m_txs), allocator);
@@ -871,6 +872,7 @@ namespace monero {
       if (key == std::string("multisigTxHex") && !it->second.data().empty()) set->m_multisig_tx_hex = it->second.data();
       else if (key == std::string("unsignedTxHex") && !it->second.data().empty()) set->m_unsigned_tx_hex = it->second.data();
       else if (key == std::string("signedTxHex") && !it->second.data().empty()) set->m_signed_tx_hex = it->second.data();
+      else if (key == std::string("unsignedCommitment") && !it->second.data().empty()) set->m_unsigned_commitment = it->second.data();
       else if (key == std::string("txs")) {
         for (boost::property_tree::ptree::const_iterator it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
           std::shared_ptr<monero_tx_wallet> tx_wallet = std::make_shared<monero_tx_wallet>();

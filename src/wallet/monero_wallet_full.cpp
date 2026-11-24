@@ -60,6 +60,7 @@
 
 #include "utils/gen_utils.h"
 #include "utils/monero_utils.h"
+#include "utils/monero_wallet_utils.h"
 #include <chrono>
 #include <iostream>
 #include "mnemonics/electrum-words.h"
@@ -2754,6 +2755,7 @@ namespace monero {
 
     std::vector <wallet2::tx_construction_data> tx_constructions;
     std::vector<uint64_t> tx_weights;
+    boost::optional<std::string> described_commitment;
     if (!unsigned_tx_hex.empty()) {
       try {
         tools::wallet2::unsigned_tx_set exported_txs;
@@ -2761,6 +2763,9 @@ namespace monero {
         if (!epee::string_tools::parse_hexstr_to_binbuff(unsigned_tx_hex, blob)) throw std::runtime_error("Failed to parse hex.");
         if (!m_w2->parse_unsigned_tx_from_str(blob, exported_txs)) throw std::runtime_error("cannot load unsigned_txset");
         tx_constructions = exported_txs.txes;
+        // the commitment of the set travels with its description, which the signer that
+        // described it hands back: a set that was rewritten between the two fails the check
+        described_commitment = monero_wallet_utils::get_unsigned_tx_commitment(unsigned_tx_hex, m_w2->get_account().get_keys().m_view_secret_key);
         tx_weights.resize(tx_constructions.size()); // an unsigned txset does not contain a transaction with an exact weight yet
       }
       catch (const std::exception &e) {
@@ -2905,6 +2910,7 @@ namespace monero {
       // build and return tx set
       monero_tx_set tx_set;
       tx_set.m_txs = txs;
+      tx_set.m_unsigned_commitment = described_commitment;
       return tx_set;
     }
     catch (const std::exception &e)
@@ -2914,7 +2920,7 @@ namespace monero {
   }
 
   // implementation based on monero-project wallet_rpc_server.cpp::on_sign_transfer()
-  monero_tx_set monero_wallet_full::sign_txs(const std::string& unsigned_tx_hex) {
+  monero_tx_set monero_wallet_full::sign_txs(const std::string& unsigned_tx_hex, const boost::optional<std::string>& expected_commitment) {
     assert_not_closed();
     if (m_w2->key_on_device()) throw std::runtime_error("command not supported by HW wallet");
     if (m_w2->watch_only()) throw std::runtime_error("command not supported by view-only wallet");
@@ -2924,6 +2930,13 @@ namespace monero {
 
     tools::wallet2::unsigned_tx_set exported_txs;
     if(!m_w2->parse_unsigned_tx_from_str(blob, exported_txs)) throw std::runtime_error("cannot load unsigned_txset");
+
+    // the echo contract: the set that signs is the set that was described, so a rewrite of it -
+    // which a holder of the view key can make, since the set encrypts to that key - fails here
+    // instead of paying the address that the rewrite names
+    if (expected_commitment != boost::none && expected_commitment.get() != monero_wallet_utils::get_unsigned_tx_commitment(unsigned_tx_hex, m_w2->get_account().get_keys().m_view_secret_key)) {
+      throw std::runtime_error("Failed to sign unsigned tx: the set does not match the one that was described");
+    }
 
     std::vector<tools::wallet2::pending_tx> ptxs;
     std::vector<std::shared_ptr<monero_tx_wallet>> txs;

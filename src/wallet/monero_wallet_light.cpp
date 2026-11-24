@@ -1807,12 +1807,16 @@ namespace monero {
     if (unsigned_tx_hex.empty() && multisig_tx_hex.empty()) throw std::runtime_error("no txset provided");
 
     std::vector <tools::wallet2::tx_construction_data> tx_constructions;
+    boost::optional<std::string> described_commitment;
     if (!unsigned_tx_hex.empty()) {
       try {
         cryptonote::blobdata blob;
         if (!epee::string_tools::parse_hexstr_to_binbuff(unsigned_tx_hex, blob)) throw std::runtime_error("Failed to parse hex.");
         tools::wallet2::unsigned_tx_set exported_txs = monero_wallet_utils::parse_unsigned_tx(blob, m_account.get_keys().m_view_secret_key);
         tx_constructions = exported_txs.txes;
+        // the commitment of the set travels with its description, which the signer that
+        // described it hands back: a set that was rewritten between the two fails the check
+        described_commitment = monero_wallet_utils::get_unsigned_tx_commitment(unsigned_tx_hex, m_account.get_keys().m_view_secret_key);
       }
       catch (const std::exception &e) {
         throw std::runtime_error("failed to parse unsigned transfers: " + std::string(e.what()));
@@ -1917,6 +1921,7 @@ namespace monero {
       // build and return tx set
       monero_tx_set tx_set;
       tx_set.m_txs = txs;
+      tx_set.m_unsigned_commitment = described_commitment;
       return tx_set;
     }
     catch (const std::exception &e) {
@@ -1925,7 +1930,7 @@ namespace monero {
   }
 
   // implementation based on monero-project's wallet_rpc_server.cpp::on_sign_transfer()
-  monero_tx_set monero_wallet_light::sign_txs(const std::string& unsigned_tx_hex) {
+  monero_tx_set monero_wallet_light::sign_txs(const std::string& unsigned_tx_hex, const boost::optional<std::string>& expected_commitment) {
     assert_not_closed();
     // the cache that the signing reads is the one the background sync replaces, which every other
     // operation holds the op lock against: the signing holds it too, or it reads outputs that the sync
@@ -1938,6 +1943,12 @@ namespace monero {
     if (!epee::string_tools::parse_hexstr_to_binbuff(unsigned_tx_hex, blob)) throw std::runtime_error("Failed to parse hex.");
 
     tools::wallet2::unsigned_tx_set exported_txs = monero_wallet_utils::parse_unsigned_tx(blob, m_account.get_keys().m_view_secret_key);
+    // the echo contract: the set that signs is the set that was described, so a rewrite of it -
+    // which a holder of the view key can make, since the set encrypts to that key - fails here
+    // instead of paying the address that the rewrite names
+    if (expected_commitment != boost::none && expected_commitment.get() != monero_wallet_utils::get_unsigned_tx_commitment(unsigned_tx_hex, m_account.get_keys().m_view_secret_key)) {
+      throw std::runtime_error("Failed to sign unsigned tx: the set does not match the one that was described");
+    }
 
     std::vector<tools::wallet2::pending_tx> ptxs;
     std::vector<std::shared_ptr<monero_tx_wallet>> txs;

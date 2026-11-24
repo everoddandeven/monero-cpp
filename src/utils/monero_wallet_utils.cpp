@@ -56,6 +56,7 @@
 #include "wallet/pending_tx_validation.h"
 #include "storages/portable_storage_template_helper.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
+#include "crypto/hash.h"
 #include "mnemonics/electrum-words.h"
 #include "mnemonics/english.h"
 #include "string_tools.h"
@@ -292,6 +293,26 @@ tools::wallet2::unsigned_tx_set monero_wallet_utils::parse_unsigned_tx(const std
   LOG_PRINT_L1("Loaded tx unsigned data from binary: " << exported_txs.txes.size() << " transactions");
 
   return exported_txs;
+}
+
+std::string monero_wallet_utils::get_unsigned_tx_commitment(const std::string &unsigned_tx_hex, const crypto::secret_key &view_secret_key) {
+  cryptonote::blobdata blob;
+  if (!epee::string_tools::parse_hexstr_to_binbuff(unsigned_tx_hex, blob)) throw std::runtime_error("Failed to parse hex.");
+  std::string s = blob;
+  const size_t magiclen = strlen(UNSIGNED_TX_PREFIX) - 1;
+  if (strncmp(s.c_str(), UNSIGNED_TX_PREFIX, magiclen)) throw std::runtime_error("Bad magic from unsigned tx");
+  s = s.substr(magiclen);
+  const char version = s[0];
+  s = s.substr(1);
+  if (version == '\003' || version == '\004') throw std::runtime_error("Not loading deprecated format");
+  else if (version == '\005') {
+    try { s = monero_wallet_utils::decrypt(s, view_secret_key); }
+    catch (const std::exception &e) { throw std::runtime_error(std::string("Failed to decrypt unsigned tx: ") + e.what()); }
+  }
+  else throw std::runtime_error("Unsupported version in unsigned tx");
+  crypto::hash commitment;
+  crypto::cn_fast_hash(s.data(), s.size(), commitment);
+  return epee::string_tools::pod_to_hex(commitment);
 }
 
 std::string monero_wallet_utils::dump_unsigned_tx(std::vector<tools::wallet2::tx_construction_data>& construction_data, const boost::optional<std::string>& payment_id, const wallet2_exported_outputs& outputs, const crypto::secret_key &view_secret_key) {

@@ -372,6 +372,7 @@ namespace monero {
     boost::optional<std::string> m_signed_tx_hex;
     boost::optional<std::string> m_unsigned_tx_hex;
     boost::optional<std::string> m_multisig_tx_hex;
+    boost::optional<std::string> m_unsigned_commitment;
 
     //boost::property_tree::ptree to_property_tree() const;
 

@@ -112,6 +112,17 @@ namespace monero_wallet_utils
   tools::wallet2::unsigned_tx_set parse_unsigned_tx(const std::string &unsigned_tx_st, const crypto::secret_key &view_secret_key);
 
   /**
+   * Hash of the decrypted body of an unsigned tx set, which names the set that a caller
+   * described: any rewrite of the set, which a holder of the view key can make since the
+   * set encrypts to that key, changes the hash.
+   *
+   * @param unsigned_tx_hex unsigned tx hex
+   * @param view_secret_key private view key
+   * @return hash of the decrypted set as hex
+   */
+  std::string get_unsigned_tx_commitment(const std::string &unsigned_tx_hex, const crypto::secret_key &view_secret_key);
+
+  /**
    * Dump wallet2's tx construction data.
    *
    * Based on wallet2::dump_tx_to_str().
