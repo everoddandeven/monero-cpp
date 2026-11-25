@@ -281,6 +281,7 @@ namespace monero {
     static std::shared_ptr<monero_output_query> deserialize(const std::string& json);
     static std::shared_ptr<monero_output_query> deserialize_from_block(const std::string& output_query_json);
     static bool is_contextual(const monero_output_query& query);
+    std::shared_ptr<monero_output_wallet> make_copy() const override;
     std::shared_ptr<monero_output_query> copy(const std::shared_ptr<monero_output>& src, const std::shared_ptr<monero_output>& tgt) const;
     std::shared_ptr<monero_output_wallet> copy(const std::shared_ptr<monero_output_wallet>& src, const std::shared_ptr<monero_output_wallet>& tgt) const override;
     std::shared_ptr<monero_output_query> copy(const std::shared_ptr<monero_output_query>& src, const std::shared_ptr<monero_output_query>& tgt) const;

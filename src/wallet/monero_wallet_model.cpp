@@ -421,7 +421,7 @@ namespace monero {
     // copy wallet extensions
     tgt->m_tx_set = src->m_tx_set;
     // the block names the height and the time of a confirmed tx, which a copy still answers: the
-    // copy shares the block of the tx it copies, the way its transfers and outputs share their values
+    // copy shares the block of the tx it copies, the way it shares its tx set
     tgt->m_block = src->m_block;
     tgt->m_is_incoming = src->m_is_incoming;
     tgt->m_is_outgoing = src->m_is_outgoing;
@@ -1412,6 +1412,10 @@ namespace monero {
 
     // return deserialized query
     return output_query;
+  }
+
+  std::shared_ptr<monero_output_wallet> monero_output_query::make_copy() const {
+    return std::make_shared<monero_output_query>();
   }
 
   std::shared_ptr<monero_output_query> monero_output_query::copy(const std::shared_ptr<monero_output>& src, const std::shared_ptr<monero_output>& tgt) const {
