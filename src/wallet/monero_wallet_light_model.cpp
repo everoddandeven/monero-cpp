@@ -548,10 +548,12 @@ namespace monero {
         for (boost::property_tree::ptree::const_iterator it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
           std::shared_ptr<monero_tx_light> transaction = std::make_shared<monero_tx_light>();
           monero_tx_light::from_property_tree(it2->second, transaction);
-          // the sync reads the state, the height and the totals of every transaction: one that
-          // misses a field errors here, and not as a crash of the sync deeper in
+          // the sync reads the state and the totals of every transaction, and the height of one
+          // the chain carries: a transaction that only the mempool shows names no height, which
+          // the sync itself reads as unconfirmed. one that misses a field it needs errors here,
+          // and not as a crash of the sync deeper in
           if (transaction->m_hash == boost::none || transaction->m_mempool == boost::none || transaction->m_coinbase == boost::none ||
-              transaction->m_height == boost::none || transaction->m_unlock_time == boost::none ||
+              (!transaction->m_mempool.get() && transaction->m_height == boost::none) || transaction->m_unlock_time == boost::none ||
               transaction->m_total_received == boost::none || transaction->m_total_sent == boost::none) {
             throw std::runtime_error("Light wallet server response is missing required transaction fields");
           }
