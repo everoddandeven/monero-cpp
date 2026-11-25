@@ -964,6 +964,7 @@ namespace monero {
 
     void on_spend_tx_hashes(const std::vector<std::string>& tx_hashes) {
       if (m_wallet.get_listeners().empty()) return;
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       monero_tx_query tx_query;
       tx_query.m_hashes = tx_hashes;
       tx_query.m_include_outputs = true;
@@ -999,7 +1000,7 @@ namespace monero {
     std::set<std::string> m_prev_known_tx_hashes;            // txs seen as of the last diff, to detect newly-appeared ones
     std::set<std::string> m_prev_locked_tx_hashes;           // locked txs seen as of the last diff, to detect newly-unlocked ones
     std::unique_ptr<tools::threadpool> m_notification_pool;  // threadpool of size 1 to queue notifications for external announcement
-    boost::recursive_mutex m_notification_mutex;             // the sync thread and the threads that spend announce at the same time, and the pool runs no worker of its own
+    boost::recursive_mutex m_notification_mutex;             // the sync thread and the threads that spend enter an announcement at the same time, and nothing orders their entries
 
     bool check_for_changed_balances() {
       uint64_t balance = m_wallet.get_balance();
@@ -2356,7 +2357,8 @@ namespace monero {
         if (relayed_hashes.empty()) throw;
         m_cache->calculate_balance();
         op_lock.unlock(); // the listener reads the balances of the wallet through the lock itself
-        m_wallet_listener->on_spend_txs(result);
+        try { m_wallet_listener->on_spend_txs(result); }
+        catch (const std::exception& le) { MWARNING("Failed to notify listeners of spent funds: " << le.what()); }
         std::string relayed_list;
         for (const auto& h : relayed_hashes) relayed_list += (relayed_list.empty() ? "" : ", ") + h;
         throw std::runtime_error(std::string(e.what()) + "; already relayed: " + relayed_list);

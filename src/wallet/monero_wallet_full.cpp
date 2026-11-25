@@ -856,7 +856,7 @@ namespace monero {
     uint64_t m_prev_unlocked_balance;
     std::set<std::string> m_prev_locked_tx_hashes;
     std::unique_ptr<tools::threadpool> m_notification_pool;  // threadpool of size 1 to queue notifications for external announcement
-    boost::recursive_mutex m_notification_mutex;             // the refresh thread and the threads that spend announce at the same time, and the pool runs no worker of its own
+    boost::recursive_mutex m_notification_mutex;             // the refresh thread and the threads that spend enter an announcement at the same time, and nothing orders their entries
 
     bool check_for_changed_balances() {
       uint64_t balance = m_w2.balance_all(STRICT_); // unlocked; announcing thread holds the sync lock
@@ -2992,7 +2992,10 @@ namespace monero {
         // a tx that fails to submit after an earlier one went leaves money on the network that
         // no returned list names: the txs that went out are heard by the listeners, then the
         // failure names them so a caller that rebuilds knows what already pays
-        if (!tx_hashes.empty()) m_w2_listener->on_spend_tx_hashes(tx_hashes);
+        if (!tx_hashes.empty()) {
+          try { m_w2_listener->on_spend_tx_hashes(tx_hashes); }
+          catch (const std::exception& le) { MWARNING("Failed to notify listeners of spent funds: " << le.what()); }
+        }
         std::string prefix = "Failed to submit signed tx: ";
         if (tx_hashes.empty()) throw std::runtime_error(prefix + e.what());
         std::string relayed_list;
