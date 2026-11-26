@@ -766,4 +766,8 @@ if (BUILD_TESTS)
   if (NOT WIN32)
     target_link_libraries(monero_tests dl)
   endif()
+
+  if (NOT WIN32)
+    target_link_libraries(light_model_tests dl)
+  endif()
 endif()
