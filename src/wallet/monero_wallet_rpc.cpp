@@ -1236,7 +1236,8 @@ namespace monero {
     return *set;
   }
 
-  monero_tx_set monero_wallet_rpc::sign_txs(const std::string& unsigned_tx_hex) {
+  monero_tx_set monero_wallet_rpc::sign_txs(const std::string& unsigned_tx_hex, const boost::optional<std::string>& expected_commitment) {
+    if (expected_commitment != boost::none) throw std::runtime_error("sign_txs() cannot verify a described set on an rpc wallet: describe and sign through one wallet");
     auto params = std::make_shared<monero_sign_describe_transfer_params>(unsigned_tx_hex);
     params->m_export_raw = true;
     params->m_get_tx_keys = true;
@@ -1313,6 +1314,10 @@ namespace monero {
       auto result = m_rpc->send_json_request("check_tx_key", params);
       check->m_is_good = true;
       deserialize_check_tx(result, check);
+      // the wallet behind the rpc answers the fields of the check and not whether the key checked out:
+      // the address received nothing when the key is not the one of the tx, which the other wallets
+      // derive the same way
+      check->m_is_good = check->m_received_amount != boost::none && check->m_received_amount.get() > 0;
     } catch (const monero_rpc_error& ex) {
       normalize_wallet_error(ex);
     }

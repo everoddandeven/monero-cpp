@@ -994,7 +994,7 @@ namespace monero {
      * @param unsigned_tx_hex is unsigned transaction hex from when the transactions were created
      * @return the signed transaction set
      */
-    virtual monero_tx_set sign_txs(const std::string& unsigned_tx_hex) {
+    virtual monero_tx_set sign_txs(const std::string& unsigned_tx_hex, const boost::optional<std::string>& expected_commitment = boost::none) {
       throw std::runtime_error("sign_txs() not supported");
     }
 

@@ -53,8 +53,10 @@
 
 #include "monero_wallet_utils.h"
 #include "rpc/core_rpc_server_commands_defs.h"
+#include "wallet/pending_tx_validation.h"
 #include "storages/portable_storage_template_helper.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
+#include "crypto/hash.h"
 #include "mnemonics/electrum-words.h"
 #include "mnemonics/english.h"
 #include "string_tools.h"
@@ -156,7 +158,9 @@ std::shared_ptr<monero_tx_wallet> monero_wallet_utils::ptx_to_tx(const tools::wa
       output->m_subaddress_index = subaddress_idx;
       output->m_is_spent = false;
       output->m_is_frozen = false;
-      bool is_change = cd.change_dts.amount > 0 && dest.amount == cd.change_dts.amount && change_output == nullptr;
+      // the change is the output that pays the address of the change, and not the first one of its
+      // amount, which a destination can share: wallet2 tells them apart the same way
+      bool is_change = cd.change_dts.amount > 0 && dest.addr == cd.change_dts.addr && change_output == nullptr;
       if (is_change) {
         change_output = output;
       }
@@ -224,7 +228,7 @@ std::shared_ptr<monero_tx_wallet> monero_wallet_utils::ptx_to_tx(const tools::wa
   return tx;
 }
 
-std::vector<tools::wallet2::pending_tx> monero_wallet_utils::parse_signed_tx(const std::string &signed_tx_st, const crypto::secret_key &view_secret_key) {
+tools::wallet2::signed_tx_set monero_wallet_utils::parse_signed_tx(const std::string &signed_tx_st, const crypto::secret_key &view_secret_key) {
   std::string s = signed_tx_st;
   tools::wallet2::signed_tx_set signed_txs;
 
@@ -255,7 +259,7 @@ std::vector<tools::wallet2::pending_tx> monero_wallet_utils::parse_signed_tx(con
   LOG_PRINT_L0("Loaded signed tx data from binary: " << signed_txs.ptx.size() << " transactions");
   for (auto &c_ptx: signed_txs.ptx) LOG_PRINT_L0(cryptonote::obj_to_json_str(c_ptx.tx));
 
-  return signed_txs.ptx;
+  return signed_txs;
 }
 
 tools::wallet2::unsigned_tx_set monero_wallet_utils::parse_unsigned_tx(const std::string &unsigned_tx_st, const crypto::secret_key &view_secret_key) {
@@ -289,6 +293,26 @@ tools::wallet2::unsigned_tx_set monero_wallet_utils::parse_unsigned_tx(const std
   LOG_PRINT_L1("Loaded tx unsigned data from binary: " << exported_txs.txes.size() << " transactions");
 
   return exported_txs;
+}
+
+std::string monero_wallet_utils::get_unsigned_tx_commitment(const std::string &unsigned_tx_hex, const crypto::secret_key &view_secret_key) {
+  cryptonote::blobdata blob;
+  if (!epee::string_tools::parse_hexstr_to_binbuff(unsigned_tx_hex, blob)) throw std::runtime_error("Failed to parse hex.");
+  std::string s = blob;
+  const size_t magiclen = strlen(UNSIGNED_TX_PREFIX) - 1;
+  if (strncmp(s.c_str(), UNSIGNED_TX_PREFIX, magiclen)) throw std::runtime_error("Bad magic from unsigned tx");
+  s = s.substr(magiclen);
+  const char version = s[0];
+  s = s.substr(1);
+  if (version == '\003' || version == '\004') throw std::runtime_error("Not loading deprecated format");
+  else if (version == '\005') {
+    try { s = monero_wallet_utils::decrypt(s, view_secret_key); }
+    catch (const std::exception &e) { throw std::runtime_error(std::string("Failed to decrypt unsigned tx: ") + e.what()); }
+  }
+  else throw std::runtime_error("Unsupported version in unsigned tx");
+  crypto::hash commitment;
+  crypto::cn_fast_hash(s.data(), s.size(), commitment);
+  return epee::string_tools::pod_to_hex(commitment);
 }
 
 std::string monero_wallet_utils::dump_unsigned_tx(std::vector<tools::wallet2::tx_construction_data>& construction_data, const boost::optional<std::string>& payment_id, const wallet2_exported_outputs& outputs, const crypto::secret_key &view_secret_key) {
@@ -325,6 +349,12 @@ std::string monero_wallet_utils::dump_unsigned_tx(std::vector<tools::wallet2::tx
 }
 
 std::string monero_wallet_utils::sign_tx(tools::wallet2::unsigned_tx_set &exported_txs, std::vector<tools::wallet2::pending_tx> &txs, tools::wallet2::signed_tx_set &signed_txes, std::vector<std::string>& signed_kis, const cryptonote::account_base& account, const serializable_unordered_map<crypto::public_key, cryptonote::subaddress_index>& subaddresses) {
+  // the unsigned set is encrypted with the view key, which the server of a light wallet holds: a set
+  // that someone rewrote pays the destinations it says and not the ones the builder showed, which the
+  // check of the vendored wallet catches before anything is signed — the change addresses and the
+  // destinations are matched against the keys of the account that is about to sign
+  tools::wallet::sanity_check_unsigned_tx_set(exported_txs.txes, account.get_keys(), subaddresses);
+
   // sign the transactions
   for (size_t n = 0; n < exported_txs.txes.size(); ++n) {
     tools::wallet2::tx_construction_data &sd = exported_txs.txes[n];

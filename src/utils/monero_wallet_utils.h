@@ -98,7 +98,7 @@ namespace monero_wallet_utils
    * @param view_secret_key private view key
    * @return pending txs from wallet2's internal data model
    */
-  std::vector<tools::wallet2::pending_tx> parse_signed_tx(const std::string &signed_tx_st, const crypto::secret_key &view_secret_key);
+  tools::wallet2::signed_tx_set parse_signed_tx(const std::string &signed_tx_st, const crypto::secret_key &view_secret_key);
 
   /**
    * Parse unsigned tx hex to wallet2's internal data model unsigned_tx_set.
@@ -110,6 +110,17 @@ namespace monero_wallet_utils
    * @return unsigned tx set from wallet2's internal data model
    */
   tools::wallet2::unsigned_tx_set parse_unsigned_tx(const std::string &unsigned_tx_st, const crypto::secret_key &view_secret_key);
+
+  /**
+   * Hash of the decrypted body of an unsigned tx set, which names the set that a caller
+   * described: any rewrite of the set, which a holder of the view key can make since the
+   * set encrypts to that key, changes the hash.
+   *
+   * @param unsigned_tx_hex unsigned tx hex
+   * @param view_secret_key private view key
+   * @return hash of the decrypted set as hex
+   */
+  std::string get_unsigned_tx_commitment(const std::string &unsigned_tx_hex, const crypto::secret_key &view_secret_key);
 
   /**
    * Dump wallet2's tx construction data.

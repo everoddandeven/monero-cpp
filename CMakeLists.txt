@@ -640,6 +640,7 @@ endif()
 
 if (BUILD_TESTS)
   set(TEST_SRC_FILES test/monero_tests.cpp)
+  set(LIGHT_TEST_SRC_FILES test/light_model_tests.cpp)
   
   add_executable(monero_tests ${LIBRARY_SRC_FILES} ${TEST_SRC_FILES})
 
@@ -701,7 +702,72 @@ if (BUILD_TESTS)
       ${HIDAPI_LIBRARIES}
       ${EXTRA_LIBRARIES}
   )
+
+  add_executable(light_model_tests ${LIBRARY_SRC_FILES} ${LIGHT_TEST_SRC_FILES})
+
+  target_include_directories(light_model_tests PUBLIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/include
+      src
+      "${MONERO_PROJECT}/contrib/epee/include"
+      "${MONERO_PROJECT}/external/"
+      "${MONERO_PROJECT}/external/easylogging++"
+      "${MONERO_PROJECT}/external/rapidjson/include"
+      "${MONERO_PROJECT_SRC}/"
+      "${MONERO_PROJECT_SRC}/wallet"
+      "${MONERO_PROJECT_SRC}/wallet/api"
+      "${MONERO_PROJECT_SRC}/hardforks"
+      "${MONERO_PROJECT_SRC}/crypto"
+      "${MONERO_PROJECT_SRC}/crypto/crypto_ops_builder/include/"
+      ${Protobuf_INCLUDE_DIR}
+      ${Boost_INCLUDE_DIR}
+      ${OPENSSL_INCLUDE_DIR}
+      external/libsodium/include/sodium
+      external/openssl-sdk/include
+      ${HIDAPI_INCLUDE_DIR}
+      ${UNBOUND_INCLUDE_DIR}
+  )
+
+  target_link_libraries(light_model_tests
+      wallet
+      rpc_base
+      net
+      lmdb
+      easylogging
+      cryptonote_core
+      cryptonote_protocol
+      cryptonote_basic
+      cryptonote_format_utils_basic
+      mnemonics
+      ringct
+      ringct_basic
+      common
+      blockchain_db
+      blocks
+      checkpoints
+      device
+      device_trezor
+      multisig
+      version
+      cncrypto
+      randomx
+      epee
+      hardforks
+      ${wallet_crypto}
+      
+      ${UNBOUND_LIBRARIES}
+      ${Boost_LIBRARIES}
+      ${Protobuf_LIBRARY}
+      ${LibUSB_LIBRARIES}
+      ${OPENSSL_LIBRARIES}
+      ${SODIUM_LIBRARY}
+      ${HIDAPI_LIBRARIES}
+      ${EXTRA_LIBRARIES}
+  )
   if (NOT WIN32)
     target_link_libraries(monero_tests dl)
+  endif()
+
+  if (NOT WIN32)
+    target_link_libraries(light_model_tests dl)
   endif()
 endif()

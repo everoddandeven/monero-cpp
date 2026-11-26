@@ -271,7 +271,7 @@ namespace monero {
 
     // assert JSON-RPC response is defined
     if (response.m_result == boost::none) throw monero_error("Invalid Monero JSONRPC response");
-    return response.m_result.get();
+    return std::move(response.m_result.get());
   }
 
   monero_rpc_response monero_rpc_connection::send_json_request(const monero_rpc_request &request, const boost::optional<uint32_t>& timeout_ms) const {
@@ -292,7 +292,7 @@ namespace monero {
 
     // assert RPC response is defined
     if (response.m_response == boost::none) throw monero_error("Invalid Monero RPC response");
-    return response.m_response.get();
+    return std::move(response.m_response.get());
   }
 
   monero_rpc_response monero_rpc_connection::send_path_request(const monero_rpc_request &request, const boost::optional<uint32_t>& timeout_ms) const {
@@ -404,12 +404,13 @@ namespace monero {
     boost::property_tree::ptree node;
     gen_utils::deserialize(json, node);
 
-    // parse JSON-RPC response
-    for (boost::property_tree::ptree::const_iterator it = node.begin(); it != node.end(); ++it) {
+    // parse JSON-RPC response. the result subtree is moved out of the parsed node and not copied: the
+    // node dies with this frame, and a copy of it is a second parse of the whole answer for nothing
+    for (boost::property_tree::ptree::iterator it = node.begin(); it != node.end(); ++it) {
       std::string key = it->first;
       if (key == std::string("error")) raise_rpc_error(it->second, uri, method);
       else if (key == std::string("jsonrpc")) response.m_jsonrpc = it->second.data();
-      else if (key == std::string("result")) response.m_result = it->second;
+      else if (key == std::string("result")) response.m_result = std::move(it->second);
     }
 
     // if not JSON-RPC, set RPC response

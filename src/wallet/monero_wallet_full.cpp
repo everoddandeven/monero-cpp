@@ -60,6 +60,7 @@
 
 #include "utils/gen_utils.h"
 #include "utils/monero_utils.h"
+#include "utils/monero_wallet_utils.h"
 #include <chrono>
 #include <iostream>
 #include "mnemonics/electrum-words.h"
@@ -607,6 +608,7 @@ namespace monero {
     }
 
     void on_sync_start(uint64_t start_height, uint64_t end_height) {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       tools::threadpool::waiter waiter(*m_notification_pool);
       m_notification_pool->submit(&waiter, [this, start_height, end_height]() {
         if (m_sync_start_height != boost::none || m_sync_end_height != boost::none) throw std::runtime_error("Sync start or end height should not already be allocated, is previous sync in progress?");
@@ -626,6 +628,7 @@ namespace monero {
     }
 
     void on_sync_end() {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       tools::threadpool::waiter waiter(*m_notification_pool);
       m_notification_pool->submit(&waiter, [this]() {
         auto reset_sync_state = epee::misc_utils::create_scope_leave_handler([this]() {
@@ -641,6 +644,7 @@ namespace monero {
     }
 
     void on_new_block(uint64_t height, const cryptonote::block& cn_block) override {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
 
       // ignore notifications outside an active sync
@@ -694,6 +698,7 @@ namespace monero {
     }
 
     void on_unconfirmed_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& cn_tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index) override {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
 
       // queue notification processing off main thread
@@ -734,6 +739,7 @@ namespace monero {
     }
 
     void on_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& cn_tx, uint64_t amount, uint64_t burnt, const cryptonote::subaddress_index& subaddr_index, bool is_change, uint64_t unlock_time) override {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
 
       // queue notification processing off main thread
@@ -776,6 +782,7 @@ namespace monero {
     }
 
     void on_money_spent(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& cn_tx_in, uint64_t amount, const cryptonote::transaction& cn_tx_out, const cryptonote::subaddress_index& subaddr_index) override {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
       if (&cn_tx_in != &cn_tx_out) throw std::runtime_error("on_money_spent() in tx is different than out tx");
 
@@ -818,6 +825,7 @@ namespace monero {
     }
 
     void on_spend_tx_hashes(const std::vector<std::string>& tx_hashes) {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
       monero_tx_query tx_query;
       tx_query.m_hashes = tx_hashes;
@@ -827,6 +835,7 @@ namespace monero {
     }
 
     void on_spend_txs(const std::vector<std::shared_ptr<monero_tx_wallet>>& txs) {
+      boost::lock_guard<boost::recursive_mutex> notification_lock(m_notification_mutex);
       if (m_wallet.get_listeners().empty()) return;
       tools::threadpool::waiter waiter(*m_notification_pool);
       m_notification_pool->submit(&waiter, [this, txs]() {
@@ -847,6 +856,7 @@ namespace monero {
     uint64_t m_prev_unlocked_balance;
     std::set<std::string> m_prev_locked_tx_hashes;
     std::unique_ptr<tools::threadpool> m_notification_pool;  // threadpool of size 1 to queue notifications for external announcement
+    boost::recursive_mutex m_notification_mutex;             // the refresh thread and the threads that spend enter an announcement at the same time, and nothing orders their entries
 
     bool check_for_changed_balances() {
       uint64_t balance = m_w2.balance_all(STRICT_); // unlocked; announcing thread holds the sync lock
@@ -2745,6 +2755,7 @@ namespace monero {
 
     std::vector <wallet2::tx_construction_data> tx_constructions;
     std::vector<uint64_t> tx_weights;
+    boost::optional<std::string> described_commitment;
     if (!unsigned_tx_hex.empty()) {
       try {
         tools::wallet2::unsigned_tx_set exported_txs;
@@ -2752,6 +2763,9 @@ namespace monero {
         if (!epee::string_tools::parse_hexstr_to_binbuff(unsigned_tx_hex, blob)) throw std::runtime_error("Failed to parse hex.");
         if (!m_w2->parse_unsigned_tx_from_str(blob, exported_txs)) throw std::runtime_error("cannot load unsigned_txset");
         tx_constructions = exported_txs.txes;
+        // the commitment of the set travels with its description, which the signer that
+        // described it hands back: a set that was rewritten between the two fails the check
+        described_commitment = monero_wallet_utils::get_unsigned_tx_commitment(unsigned_tx_hex, m_w2->get_account().get_keys().m_view_secret_key);
         tx_weights.resize(tx_constructions.size()); // an unsigned txset does not contain a transaction with an exact weight yet
       }
       catch (const std::exception &e) {
@@ -2886,6 +2900,7 @@ namespace monero {
           tx->m_change_address = get_account_address_as_str(m_w2->nettype(), cd0.subaddr_account > 0, cd0.change_dts.addr);
         }
 
+        if (tx->m_output_sum.get() > tx->m_input_sum.get()) throw std::runtime_error("Unbalanced tx set: the outputs pay more than the inputs");
         tx->m_fee = tx->m_input_sum.get() - tx->m_output_sum.get();
         if (tx_weights[n] > 0) tx->m_weight = tx_weights[n];
         tx->m_unlock_time = cd.unlock_time;
@@ -2896,6 +2911,7 @@ namespace monero {
       // build and return tx set
       monero_tx_set tx_set;
       tx_set.m_txs = txs;
+      tx_set.m_unsigned_commitment = described_commitment;
       return tx_set;
     }
     catch (const std::exception &e)
@@ -2905,7 +2921,7 @@ namespace monero {
   }
 
   // implementation based on monero-project wallet_rpc_server.cpp::on_sign_transfer()
-  monero_tx_set monero_wallet_full::sign_txs(const std::string& unsigned_tx_hex) {
+  monero_tx_set monero_wallet_full::sign_txs(const std::string& unsigned_tx_hex, const boost::optional<std::string>& expected_commitment) {
     assert_not_closed();
     if (m_w2->key_on_device()) throw std::runtime_error("command not supported by HW wallet");
     if (m_w2->watch_only()) throw std::runtime_error("command not supported by view-only wallet");
@@ -2915,6 +2931,13 @@ namespace monero {
 
     tools::wallet2::unsigned_tx_set exported_txs;
     if(!m_w2->parse_unsigned_tx_from_str(blob, exported_txs)) throw std::runtime_error("cannot load unsigned_txset");
+
+    // the echo contract: the set that signs is the set that was described, so a rewrite of it -
+    // which a holder of the view key can make, since the set encrypts to that key - fails here
+    // instead of paying the address that the rewrite names
+    if (expected_commitment != boost::none && expected_commitment.get() != monero_wallet_utils::get_unsigned_tx_commitment(unsigned_tx_hex, m_w2->get_account().get_keys().m_view_secret_key)) {
+      throw std::runtime_error("Failed to sign unsigned tx: the set does not match the one that was described");
+    }
 
     std::vector<tools::wallet2::pending_tx> ptxs;
     std::vector<std::shared_ptr<monero_tx_wallet>> txs;
@@ -2961,17 +2984,28 @@ namespace monero {
     }
 
     sync_op_lock op_lock(*this); // do not refresh while relaying txs
-    try {
-      std::vector<std::string> tx_hashes;
-      for (auto &ptx: ptx_vector) {
+    std::vector<std::string> tx_hashes;
+    for (auto &ptx: ptx_vector) {
+      try {
         m_w2->commit_tx(ptx);
-        tx_hashes.push_back(epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx)));
+      } catch (const std::exception &e) {
+        // a tx that fails to submit after an earlier one went leaves money on the network that
+        // no returned list names: the txs that went out are heard by the listeners, then the
+        // failure names them so a caller that rebuilds knows what already pays
+        if (!tx_hashes.empty()) {
+          try { m_w2_listener->on_spend_tx_hashes(tx_hashes); }
+          catch (const std::exception& le) { MWARNING("Failed to notify listeners of spent funds: " << le.what()); }
+        }
+        std::string prefix = "Failed to submit signed tx: ";
+        if (tx_hashes.empty()) throw std::runtime_error(prefix + e.what());
+        std::string relayed_list;
+        for (const auto& h : tx_hashes) relayed_list += (relayed_list.empty() ? "" : ", ") + h;
+        throw std::runtime_error(prefix + e.what() + "; already relayed: " + relayed_list);
       }
-      m_w2_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of spent funds
-      return tx_hashes;
-    } catch (const std::exception &e) {
-      throw std::runtime_error(std::string("Failed to submit signed tx: ") + e.what());
+      tx_hashes.push_back(epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx)));
     }
+    m_w2_listener->on_spend_tx_hashes(tx_hashes); // notify listeners of spent funds
+    return tx_hashes;
   }
 
   std::string monero_wallet_full::sign_message(const std::string& msg, monero_message_signature_type signature_type, uint32_t account_idx, uint32_t subaddress_idx) const {
@@ -3085,7 +3119,9 @@ namespace monero {
     uint64_t num_confirmations;
     m_w2->check_tx_key(_tx_hash, _tx_key, additional_tx_keys, info.address, received_amount, in_tx_pool, num_confirmations);
     std::shared_ptr<monero_check_tx> check_tx = std::make_shared<monero_check_tx>();
-    check_tx->m_is_good = true; // check is good if we get this far
+    // a key that is not the one of the tx, or a tx that did not pay the address, receives nothing: the
+    // check says it is not good and not that it erred
+    check_tx->m_is_good = received_amount > 0;
     check_tx->m_received_amount = received_amount;
     check_tx->m_in_tx_pool = in_tx_pool;
     check_tx->m_num_confirmations = num_confirmations;

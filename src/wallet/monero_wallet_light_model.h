@@ -199,11 +199,11 @@ namespace monero {
     rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const override;
   };
 
-  struct monero_get_random_outs_params : public serializable_struct {
+  struct monero_get_random_outs_params : public monero_wallet_params {
     boost::optional<uint32_t> m_count;
     std::vector<uint64_t> m_amounts;
 
-    monero_get_random_outs_params(uint32_t count, const std::vector<uint64_t>& amounts): m_count(count), m_amounts(amounts) {}
+    monero_get_random_outs_params(const std::string& address, const std::string& view_key, uint32_t count, const std::vector<uint64_t>& amounts): monero_wallet_params(address, view_key), m_count(count), m_amounts(amounts) {}
 
     rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const override;
   };
@@ -236,10 +236,10 @@ namespace monero {
     rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const override;
   };
 
-  struct monero_submit_raw_tx_params : public serializable_struct {
+  struct monero_submit_raw_tx_params : public monero_wallet_params {
     boost::optional<std::string> m_tx;
 
-    monero_submit_raw_tx_params(const std::string& tx): m_tx(tx) {}
+    monero_submit_raw_tx_params(const std::string& address, const std::string& view_key, const std::string& tx): monero_wallet_params(address, view_key), m_tx(tx) {}
 
     rapidjson::Value to_rapidjson_val(rapidjson::Document::AllocatorType& allocator) const override;
   };
@@ -317,6 +317,7 @@ namespace monero {
 
   struct monero_submit_raw_tx_response {
     boost::optional<std::string> m_status;
+    boost::optional<bool> m_not_relayed;
 
     static void from_property_tree(const boost::property_tree::ptree& node, const std::shared_ptr<monero_submit_raw_tx_response>& response);
   };
@@ -332,10 +333,18 @@ namespace monero {
 
   struct monero_output_wallet_light : public monero_output_wallet {
     boost::optional<bool> m_is_change;
+
+    std::shared_ptr<monero_output_wallet> make_copy() const override;
+    std::shared_ptr<monero_output_wallet> copy(const std::shared_ptr<monero_output_wallet>& src, const std::shared_ptr<monero_output_wallet>& tgt) const override;
   };
 
   class monero_wallet_light_cache {
   public:
+    // the transactions that the wallet built point at the transfers that point back at them, which the
+    // shared pointers never break on their own: the destructor frees them or the wallet leaks a graph
+    // per transaction it made
+    ~monero_wallet_light_cache();
+
     std::vector<std::shared_ptr<monero_output_light>> m_outputs;
     std::shared_ptr<monero_subaddrs_response> m_subaddrs;
     serializable_unordered_map<crypto::public_key, cryptonote::subaddress_index> m_subaddresses;
@@ -399,7 +408,8 @@ namespace monero {
     void reindex_outputs(uint64_t amount);
     uint64_t get_per_byte_fee() const { return m_per_byte_fee; }
     uint64_t get_base_fee(uint32_t priority) const;
-    uint64_t get_fee_mask() const { return m_fee_mask; }
+    // a zero mask would divide by nothing in the fee computation, so it reads as one at the least
+    uint64_t get_fee_mask() const { return m_fee_mask == 0 ? 1 : m_fee_mask; }
     uint64_t get_amount() const { return m_amount; }
 
     // subaddresses
@@ -408,17 +418,33 @@ namespace monero {
     uint64_t get_num_blocks_to_unlock(uint32_t account_idx, uint32_t subaddress_idx) const;
     void init_subaddress(monero_subaddress& subaddress) const;
 
+    /**
+     * Get the tx of a hash that the account received or sent, which throws when the store does not have it.
+     *
+     * @param hash is the hash of the tx
+     * @return the tx of the hash
+     */
+    std::shared_ptr<monero_tx_light> get_tx(const std::string& hash) const;
+
   private:
     mutable boost::recursive_mutex m_mutex;
     std::shared_ptr<monero_key_image_cache> m_key_image_cache;
+
+    // the frozen key images, which a sync replaces the outputs they mark, so the setting outlives them
+    std::set<std::string> m_frozen_key_images;
+    // the outputs of a sync arrive without their key images, which the wallet derives only when it
+    // spends: the frozen setting also lives by the identity of the output, the one-time key of its
+    // transaction and its index in it, which every answer names
+    std::set<std::string> m_frozen_output_identities;
 
     // transactions
     serializable_unordered_map<std::string, std::shared_ptr<monero_tx_light>> m_txs;
     std::vector<std::shared_ptr<monero_tx_light>> m_tx_list;
     serializable_unordered_map<std::string, std::shared_ptr<monero_tx_wallet>> m_self_constructed_txs;
+    // the unix seconds that the wallet relayed its own transactions, which the demotion of the ones
+    // that the chain never held reads
+    std::unordered_map<std::string, uint64_t> m_self_constructed_tx_relay_times;
     serializable_unordered_map<std::string, bool> m_spent_key_images;
-
-    std::shared_ptr<monero_tx_light> get_tx(const std::string& hash) const;
     void set_txs(monero_get_address_txs_response& response, const monero_get_address_info_response& addr_info_response);
 
     // blockchain

@@ -406,20 +406,23 @@ namespace monero {
     for (size_t i = 0; i < src->m_inputs.size(); ++i) {
       std::shared_ptr<monero_output_wallet> input_wallet = std::dynamic_pointer_cast<monero_output_wallet>(src->m_inputs[i]);
       if (input_wallet == nullptr) continue;
-      std::shared_ptr<monero_output_wallet> input_wallet_copy = input_wallet->copy(input_wallet, std::make_shared<monero_output_wallet>());
+      std::shared_ptr<monero_output_wallet> input_wallet_copy = input_wallet->copy(input_wallet, input_wallet->make_copy());
       input_wallet_copy->m_tx = tgt;
       tgt->m_inputs[i] = input_wallet_copy;
     }
     for (size_t i = 0; i < src->m_outputs.size(); ++i) {
       std::shared_ptr<monero_output_wallet> output_wallet = std::dynamic_pointer_cast<monero_output_wallet>(src->m_outputs[i]);
       if (output_wallet == nullptr) continue;
-      std::shared_ptr<monero_output_wallet> output_wallet_copy = output_wallet->copy(output_wallet, std::make_shared<monero_output_wallet>());
+      std::shared_ptr<monero_output_wallet> output_wallet_copy = output_wallet->copy(output_wallet, output_wallet->make_copy());
       output_wallet_copy->m_tx = tgt;
       tgt->m_outputs[i] = output_wallet_copy;
     }
 
     // copy wallet extensions
     tgt->m_tx_set = src->m_tx_set;
+    // the block names the height and the time of a confirmed tx, which a copy still answers: the
+    // copy shares the block of the tx it copies, the way it shares its tx set
+    tgt->m_block = src->m_block;
     tgt->m_is_incoming = src->m_is_incoming;
     tgt->m_is_outgoing = src->m_is_outgoing;
     if (!src->m_incoming_transfers.empty()) {
@@ -653,9 +656,8 @@ namespace monero {
   std::shared_ptr<monero_tx_query> monero_tx_query::deserialize_from_block(const std::string& tx_query_json) {
 
     // deserialize tx query std::string to property rooted at block
-    std::istringstream iss = tx_query_json.empty() ? std::istringstream() : std::istringstream(tx_query_json);
     boost::property_tree::ptree block_node;
-    boost::property_tree::read_json(iss, block_node);
+    gen_utils::deserialize(tx_query_json, block_node);
 
     // convert query property tree to block
     std::shared_ptr<monero_block> block = node_to_block_query(block_node);
@@ -851,6 +853,7 @@ namespace monero {
     if (m_multisig_tx_hex != boost::none) monero_utils::add_json_member("multisigTxHex", m_multisig_tx_hex.get(), allocator, root, value_str);
     if (m_unsigned_tx_hex != boost::none) monero_utils::add_json_member("unsignedTxHex", m_unsigned_tx_hex.get(), allocator, root, value_str);
     if (m_signed_tx_hex != boost::none) monero_utils::add_json_member("signedTxHex", m_signed_tx_hex.get(), allocator, root, value_str);
+    if (m_unsigned_commitment != boost::none) monero_utils::add_json_member("unsignedCommitment", m_unsigned_commitment.get(), allocator, root, value_str);
 
     // set sub-arrays
     if (!m_txs.empty()) root.AddMember("txs", monero_utils::to_rapidjson_val(allocator, m_txs), allocator);
@@ -869,6 +872,7 @@ namespace monero {
       if (key == std::string("multisigTxHex") && !it->second.data().empty()) set->m_multisig_tx_hex = it->second.data();
       else if (key == std::string("unsignedTxHex") && !it->second.data().empty()) set->m_unsigned_tx_hex = it->second.data();
       else if (key == std::string("signedTxHex") && !it->second.data().empty()) set->m_signed_tx_hex = it->second.data();
+      else if (key == std::string("unsignedCommitment") && !it->second.data().empty()) set->m_unsigned_commitment = it->second.data();
       else if (key == std::string("txs")) {
         for (boost::property_tree::ptree::const_iterator it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
           std::shared_ptr<monero_tx_wallet> tx_wallet = std::make_shared<monero_tx_wallet>();
@@ -1138,9 +1142,8 @@ namespace monero {
   std::shared_ptr<monero_transfer_query> monero_transfer_query::deserialize_from_block(const std::string& transfer_query_json) {
 
     // deserialize transfer query std::string to property rooted at block
-    std::istringstream iss = transfer_query_json.empty() ? std::istringstream() : std::istringstream(transfer_query_json);
     boost::property_tree::ptree blockNode;
-    boost::property_tree::read_json(iss, blockNode);
+    gen_utils::deserialize(transfer_query_json, blockNode);
 
     // convert query property tree to block
     std::shared_ptr<monero_block> block = node_to_block_query(blockNode);
@@ -1305,6 +1308,10 @@ namespace monero {
     return gen_utils::deserialize<monero_output_wallet>(json);
   }
 
+  std::shared_ptr<monero_output_wallet> monero_output_wallet::make_copy() const {
+    return std::make_shared<monero_output_wallet>();
+  }
+
   std::shared_ptr<monero_output_wallet> monero_output_wallet::copy(const std::shared_ptr<monero_output>& src, const std::shared_ptr<monero_output>& tgt) const {
     MTRACE("monero_output_wallet::copy(output)");
     return monero_output_wallet::copy(std::static_pointer_cast<monero_output_wallet>(src), std::static_pointer_cast<monero_output_wallet>(tgt));
@@ -1383,9 +1390,8 @@ namespace monero {
   std::shared_ptr<monero_output_query> monero_output_query::deserialize_from_block(const std::string& output_query_json) {
 
     // deserialize output query string to property rooted at block
-    std::istringstream iss = output_query_json.empty() ? std::istringstream() : std::istringstream(output_query_json);
     boost::property_tree::ptree blockNode;
-    boost::property_tree::read_json(iss, blockNode);
+    gen_utils::deserialize(output_query_json, blockNode);
 
     // convert query property tree to block
     std::shared_ptr<monero_block> block = node_to_block_query(blockNode);
@@ -1408,11 +1414,15 @@ namespace monero {
     return output_query;
   }
 
+  std::shared_ptr<monero_output_wallet> monero_output_query::make_copy() const {
+    return std::make_shared<monero_output_query>();
+  }
+
   std::shared_ptr<monero_output_query> monero_output_query::copy(const std::shared_ptr<monero_output>& src, const std::shared_ptr<monero_output>& tgt) const {
     return monero_output_query::copy(std::static_pointer_cast<monero_output_query>(src), std::static_pointer_cast<monero_output_query>(tgt));
   };
 
-  std::shared_ptr<monero_output_query> monero_output_query::copy(const std::shared_ptr<monero_output_wallet>& src, const std::shared_ptr<monero_output_wallet>& tgt) const {
+  std::shared_ptr<monero_output_wallet> monero_output_query::copy(const std::shared_ptr<monero_output_wallet>& src, const std::shared_ptr<monero_output_wallet>& tgt) const {
     return monero_output_query::copy(std::static_pointer_cast<monero_output_query>(src), std::static_pointer_cast<monero_output_query>(tgt));
   };
 
